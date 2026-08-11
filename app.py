@@ -335,6 +335,49 @@ with overview_info_column:
                 f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
                 "취약도는 사회·기상·쉼터 부족을 종합한 실시간 취약도이며, 쉼터 접근성은 고령인구 대비 쉼터 공급 능력을 대구시 내에서 상대 비교하여 정규화(Min-Max)한 점수입니다."
             )
+            
+            # AI 버튼 부착
+            st.markdown("---")
+            st.subheader("🤖 AI 폭염 도시처방 브리핑")
+            
+            if st.button("AI 폭염 대응 추천 받기", key="run_ai_analysis_btn"):
+                with st.spinner("AI가 행정동별 폭염 취약성과 쉼터 분포를 바탕으로 최적의 대책을 수립 중입니다..."):
+                    try:
+                        from src.integration import run_policy_analysis
+                        ai_result = run_policy_analysis(
+                            region=overview_properties['region'],
+                            budget=int(budget),
+                            max_facilities=int(max_facilities),
+                            use_mock=False
+                        )
+                        if ai_result.get("status") == "success":
+                            st.session_state["ai_briefing_result"] = ai_result
+                        else:
+                            st.error("AI 브리핑 생성에 실패했습니다.")
+                    except Exception as e:
+                        st.error(f"AI 호출 오류: {e}")
+                        
+            ai_briefing = st.session_state.get("ai_briefing_result")
+            if ai_briefing and ai_briefing.get("region") == overview_properties['region']:
+                policy = ai_briefing.get("policy_recommendation", {})
+                st.success("✅ AI 처방 브리핑 생성 완료")
+                st.markdown(f"**📝 종합 상황 요약:**\n{policy.get('summary', '-')}")
+                st.markdown(f"**🚨 대응 조치 우선순위:** `{policy.get('priority_level', '보통')}`")
+                
+                st.markdown("**💡 추천 대응 정책:**")
+                for idx, p_item in enumerate(policy.get("recommended_policies", [])):
+                    st.markdown(f"**{idx+1}. {p_item.get('policy_name', '추천 정책')}** (설치 예정지: `{p_item.get('target_location', '-')}`)")
+                    st.markdown(f"- *추천 사유:* {p_item.get('reason', '-')}")
+                    st.markdown(f"- *기대 효과:* {p_item.get('expected_effect', '-')}")
+                    if p_item.get("action_plan"):
+                        st.markdown("- *구체적 실행 방안:*")
+                        for plan in p_item.get("action_plan", []):
+                            st.markdown(f"  - {plan}")
+                
+                if policy.get("limitations"):
+                    st.markdown("**⚠️ 활용 상의 한계점:**")
+                    for lim in policy.get("limitations", []):
+                        st.markdown(f"- {lim}")
         else:
             st.info("현재는 행정경계 정보만 연결된 지역입니다.")
             st.write("표시 가능한 정보")
