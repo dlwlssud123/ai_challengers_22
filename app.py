@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import logging
 
+import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
-from src.config import Settings
+from src.analysis.district_allocation import allocate_facilities_by_priority
+from src.config import CACHE_DIR, Settings
+from src.data.http import DataSourceError, JsonCache
+from src.data.kma_history import fetch_hottest_daegu_day
 from src.pipeline import AnalysisArtifacts, run_analysis
 from src.sgis_client import SGISClientError, load_daegu_heatmap_geojson
 from src.ui.daegu_overview import merge_daegu_boundaries
@@ -74,8 +78,19 @@ st.markdown(
 
 
 @st.cache_data(ttl=3_600, show_spinner=False)
-def cached_analysis() -> AnalysisArtifacts:
+def cached_analysis(cache_schema_version: str) -> AnalysisArtifacts:
     return run_analysis(Settings.from_env())
+
+
+@st.cache_data(ttl=21_600, show_spinner=False)
+def cached_hottest_day(cache_schema_version: str) -> tuple[dict, str, str]:
+    runtime_settings = Settings.from_env()
+    return fetch_hottest_daegu_day(
+        cache=JsonCache(CACHE_DIR),
+        timeout=runtime_settings.api_timeout_seconds,
+        surface_api_url=runtime_settings.kma_surface_api_url,
+        auth_key=runtime_settings.kma_auth_key,
+    )
 
 
 @st.cache_data(ttl=21_600, show_spinner=False)
@@ -92,9 +107,36 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+settings = Settings.from_env()
+with st.sidebar:
+    st.header("히트맵 기준")
+    heatmap_label = st.radio(
+        "표시 지수",
+        ["극한폭염 정책 우선순위", "사회·건강 취약도", "쉼터 수 부족도"],
+        index=0,
+    )
+    st.header("시설 설치 시뮬레이션")
+    unit_cost = st.number_input(
+        "시설 1곳당 가상비용", min_value=1_000_000, max_value=100_000_000,
+        value=settings.default_shelter_cost_krw, step=1_000_000,
+    )
+    budget = st.number_input(
+        "총예산", min_value=0, max_value=2_000_000_000,
+        value=settings.default_shelter_cost_krw * 5, step=1_000_000,
+    )
+    max_facilities = st.number_input(
+        "최대 설치 시설 수", min_value=0, max_value=100, value=5, step=1,
+    )
+
+heatmap_metric = {
+    "극한폭염 정책 우선순위": "policy",
+    "사회·건강 취약도": "vulnerability",
+    "쉼터 수 부족도": "shelter_gap",
+}[heatmap_label]
+
 try:
     with st.spinner("대구 행정동과 공공데이터를 불러오는 중입니다..."):
-        artifacts = cached_analysis()
+        artifacts = cached_analysis("citywide-shelters-v2")
 except Exception as exc:
     st.error(f"분석 데이터를 준비하지 못했습니다: {exc}")
     st.info("`python scripts/build_dataset.py`와 `python scripts/validate_data.py`로 원인을 확인하세요.")
@@ -118,6 +160,36 @@ if artifacts.metadata.get("shelter_warning"):
 if artifacts.metadata.get("weather_warning"):
     st.info(f"기상청 최신 관측은 아직 연결 대기 중입니다: {artifacts.metadata['weather_warning']}")
 
+hottest_day = None
+hottest_warning = None
+if settings.kma_auth_key:
+    try:
+        hottest_day, hottest_mode, hottest_fetched_at = cached_hottest_day("weather-nuri-v1")
+    except DataSourceError as exc:
+        hottest_warning = str(exc)
+scenario_heat_score = (
+    float(hottest_day["heat_hazard_score"])
+    if hottest_day
+    else weather_context.get("heat_hazard_score")
+)
+
+weather_columns = st.columns(3)
+weather_columns[0].metric(
+    "현재 대구 기온",
+    f"{weather_context.get('temperature_c', 0):.1f}°C" if weather_context.get("temperature_c") is not None else "-",
+)
+weather_columns[1].metric(
+    "관측기간 중 가장 더운 날",
+    hottest_day.get("date", "-") if hottest_day else "조회 실패",
+)
+weather_columns[2].metric(
+    "당일 최고기온",
+    f"{hottest_day['maximum_temperature_c']:.1f}°C" if hottest_day else "-",
+    f"극한폭염 위험 {scenario_heat_score:.1f}/100" if scenario_heat_score is not None else None,
+)
+if hottest_warning:
+    st.warning(hottest_warning)
+
 st.subheader("대구 전체 행정동 현황")
 st.caption(
     "기존 SGIS 행정경계를 기준으로 모든 행정동을 선택할 수 있습니다. "
@@ -128,11 +200,12 @@ overview_geojson = merge_daegu_boundaries(
     raw_daegu_boundaries,
     artifacts.areas,
     artifacts.metadata.get("team_vulnerability"),
-    artifacts.citywide_shelters
+    getattr(artifacts, "citywide_shelters", None)
     if artifacts.metadata.get("shelter_source_mode") in {"live", "cache"}
     else None,
-    weather_context.get("heat_hazard_score"),
+    scenario_heat_score,
     include_dong_detail=False,
+    heatmap_metric=heatmap_metric,
 )
 selected_overview_region = st.session_state.get("overview_selected_region")
 for feature in overview_geojson.get("features", []):
@@ -167,7 +240,8 @@ with overview_map_column:
             tooltip={
                 "html": (
                     "<b>{region}</b><br/>행정동 코드 {adm_cd}<br/>"
-                    "{analysis_status}<br/>정책 우선순위 {priority_display}"
+                    "{analysis_status}<br/>{map_metric_label} {map_score_display}<br/>"
+                    "행정동 쉼터 {shelter_display}"
                 ),
                 "style": {"backgroundColor": "#292524", "color": "white"},
             },
@@ -196,12 +270,12 @@ with overview_info_column:
         st.caption(f"행정동 코드: {overview_properties['adm_cd']}")
         if overview_properties.get("has_district_analysis"):
             st.success(overview_properties["analysis_status"])
-            st.metric("실시간 정책 우선순위", overview_properties["priority_display"])
+            st.metric("극한폭염 정책 우선순위", overview_properties["priority_display"])
             st.metric("사회·건강 취약도", overview_properties.get("vulnerability_display", "-"))
             st.metric("등급", overview_properties.get("district_grade", "-"))
             st.metric("행정동 공공 API 쉼터", overview_properties.get("shelter_display", "데이터 연결 필요"))
             if not overview_properties.get("shelter_count_available"):
-                st.warning("배포 환경에서 무더위쉼터 API가 연결되지 않아 구·군별 시설 수를 표시할 수 없습니다.")
+                st.warning("배포 환경에서 무더위쉼터 API가 연결되지 않아 행정동별 시설 수를 표시할 수 없습니다.")
             st.caption(
                 f"고령인구 비율 {overview_properties.get('elderly_ratio', 0):.1f}% · "
                 f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
@@ -229,9 +303,58 @@ st.caption(
     f"수집시각 {artifacts.metadata.get('shelter_fetched_at') or '-'}"
 )
 
+st.subheader("예산·시설 설치 대시보드")
+district_rows: dict[str, dict] = {}
+for feature in overview_geojson.get("features", []):
+    properties = feature.get("properties") or {}
+    district_name = properties.get("district_name")
+    if not district_name:
+        continue
+    row = district_rows.setdefault(
+        district_name,
+        {
+            "region_name": district_name,
+            "priority_score": float(properties.get("priority_score") or 0),
+            "existing_shelters": 0,
+        },
+    )
+    if properties.get("shelter_count") is not None:
+        row["existing_shelters"] += int(properties["shelter_count"])
+
+allocation = allocate_facilities_by_priority(
+    list(district_rows.values()),
+    budget=int(budget),
+    unit_cost=int(unit_cost),
+    max_facilities=int(max_facilities),
+)
+allocation_columns = st.columns(3)
+allocation_columns[0].metric("설치 가능 시설", f"{int(allocation['new_facilities'].sum()) if not allocation.empty else 0}곳")
+allocation_columns[1].metric("예상 사용 예산", f"{int(allocation['cost'].sum()) if not allocation.empty else 0:,.0f}원")
+allocation_columns[2].metric("잔여 예산", f"{int(budget - allocation['cost'].sum()) if not allocation.empty else int(budget):,.0f}원")
+if allocation.empty:
+    st.info("예산과 최대 설치 수를 늘리면 구·군별 배분안을 표시합니다.")
+else:
+    display_allocation = allocation.rename(
+        columns={
+            "region_name": "구·군",
+            "priority_score": "극한폭염 우선순위",
+            "existing_shelters": "기존 쉼터",
+            "new_facilities": "신규 배분",
+            "cost": "예상 비용",
+        }
+    )
+    st.dataframe(
+        display_allocation.style.format({"극한폭염 우선순위": "{:.1f}", "예상 비용": "{:,.0f}원"}),
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption("현재 단계는 구·군 우선순위 기반 예산 배분안이며, 정확한 설치 지점은 후보지·도로망·토지규제 데이터가 추가돼야 확정할 수 있습니다.")
+
 with st.expander("분석 기준과 데이터 출처"):
     st.markdown(
-        "구·군 정책 우선순위는 팀 사회·건강 취약도 65%와 기상청 현재 폭염 위험 35%를 결합합니다. "
+        "구·군 정책 우선순위는 팀 사회·건강 취약도 65%와 기상청 관측기간 최고 폭염 위험 35%를 결합합니다. "
         "구·군 결과이므로 같은 구·군의 행정동에는 동일한 점수가 표시됩니다."
     )
     st.json(weather_context, expanded=False)
+    if hottest_day:
+        st.json(hottest_day, expanded=False)

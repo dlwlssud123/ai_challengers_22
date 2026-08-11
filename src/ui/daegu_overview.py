@@ -80,6 +80,7 @@ def merge_daegu_boundaries(
     citywide_shelters: gpd.GeoDataFrame | None = None,
     live_heat_score: float | None = None,
     include_dong_detail: bool = True,
+    heatmap_metric: str = "policy",
 ) -> dict:
     """Return a selectable citywide layer with dong- or district-level analysis."""
 
@@ -121,7 +122,9 @@ def merge_daegu_boundaries(
         district_match = next(
             (
                 (district_name, values)
-                for district_name, values in district_lookup.items()
+                for district_name, values in sorted(
+                    district_lookup.items(), key=lambda item: len(item[0]), reverse=True
+                )
                 if district_name and district_name in normalized_api_name
             ),
             None,
@@ -162,6 +165,7 @@ def merge_daegu_boundaries(
                 "has_analysis": False,
                 "has_district_analysis": True,
                 "analysis_status": f"{district.get('region_name')} 구·군 단위 팀 분석",
+                "district_name": str(district.get("region_name") or "-"),
                 "priority_score": score,
                 "priority_display": f"{score:.1f}점",
                 "district_grade": str(district.get("grade") or "-"),
@@ -200,4 +204,33 @@ def merge_daegu_boundaries(
                 "line_color": [100, 116, 139, 170],
             }
         feature["properties"] = properties
+
+    available_counts = [
+        int((feature.get("properties") or {}).get("shelter_count"))
+        for feature in result.get("features", [])
+        if (feature.get("properties") or {}).get("shelter_count") is not None
+    ]
+    maximum_count = max(available_counts, default=0)
+    minimum_count = min(available_counts, default=0)
+    for feature in result.get("features", []):
+        properties = feature.get("properties") or {}
+        if heatmap_metric == "vulnerability":
+            map_score = properties.get("vulnerability_score")
+            label = "사회·건강 취약도"
+        elif heatmap_metric == "shelter_gap":
+            count = properties.get("shelter_count")
+            if count is None:
+                map_score = None
+            elif maximum_count == minimum_count:
+                map_score = 0.0
+            else:
+                map_score = 100.0 * (maximum_count - int(count)) / (maximum_count - minimum_count)
+            label = "쉼터 수 부족도"
+        else:
+            map_score = properties.get("priority_score")
+            label = "극한폭염 정책 우선순위"
+        properties["map_metric_label"] = label
+        properties["map_score"] = float(map_score) if map_score is not None else None
+        properties["map_score_display"] = f"{float(map_score):.1f}점" if map_score is not None else "데이터 없음"
+        properties["fill_color"] = _score_color(float(map_score)) if map_score is not None else [100, 116, 139, 55]
     return result
