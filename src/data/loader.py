@@ -224,8 +224,12 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
         }
     else:
         weather_context = read_weather_extremum_context(_find_source("weather_extremum.csv", "weather_extremum"))
-    district_counts: dict[str, int] = {}
-    if not citywide_shelters.empty and "address" in citywide_shelters:
+    district_counts: dict[str, int] | None = None
+    if (
+        shelter_source_mode in {"live", "cache"}
+        and not citywide_shelters.empty
+        and "address" in citywide_shelters
+    ):
         districts = citywide_shelters["address"].map(district_name_from_address).dropna()
         district_counts = {str(name): int(count) for name, count in districts.value_counts().items()}
     team_vulnerability = load_team_vulnerability(PROJECT_ROOT)

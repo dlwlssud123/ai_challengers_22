@@ -50,15 +50,17 @@ def merge_daegu_boundaries(
     team_vulnerability: list[dict[str, Any]] | None = None,
     district_shelter_counts: dict[str, int] | None = None,
     live_heat_score: float | None = None,
+    include_dong_detail: bool = True,
 ) -> dict:
     """Return a selectable citywide layer with dong- or district-level analysis."""
 
-    lookup = _analysis_lookup(areas)
+    lookup = _analysis_lookup(areas) if include_dong_detail else {}
     district_lookup = {
         normalize_administrative_name(row.get("region_name")): row
         for row in (team_vulnerability or [])
         if row.get("region_name")
     }
+    shelter_counts_available = district_shelter_counts is not None
     district_shelter_counts = district_shelter_counts or {}
     if boundaries and boundaries.get("features"):
         result = deepcopy(boundaries)
@@ -121,7 +123,8 @@ def merge_daegu_boundaries(
                 if live_heat_score is not None
                 else vulnerability_score
             )
-            shelter_count = int(district_shelter_counts.get(str(district.get("region_name")), 0))
+            raw_shelter_count = district_shelter_counts.get(str(district.get("region_name")))
+            shelter_count = int(raw_shelter_count) if raw_shelter_count is not None else None
             properties = {
                 "region": api_name,
                 "adm_name": api_name,
@@ -136,6 +139,8 @@ def merge_daegu_boundaries(
                 "elderly_ratio": float(district.get("elderly_ratio") or 0),
                 "heat_illness_count": float(district.get("heat_illness_count") or 0),
                 "shelter_count": shelter_count,
+                "shelter_count_available": shelter_counts_available and shelter_count is not None,
+                "shelter_display": f"{shelter_count:,}곳" if shelter_count is not None else "데이터 연결 필요",
                 "elderly_population": None,
                 "elderly_display": "구·군 결과 참조",
                 "heat_score": None,
