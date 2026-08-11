@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 import geopandas as gpd
+from shapely.geometry import shape
 
 
 def normalize_administrative_name(value: Any) -> str:
@@ -44,11 +45,39 @@ def _analysis_lookup(areas: gpd.GeoDataFrame) -> dict[str, dict[str, Any]]:
     return rows
 
 
+def count_shelters_by_boundary(
+    boundaries: dict,
+    shelters: gpd.GeoDataFrame | None,
+) -> dict[str, int] | None:
+    """Count point shelters inside each SGIS administrative-dong polygon."""
+
+    if shelters is None or shelters.crs is None:
+        return None
+    points = shelters.to_crs("EPSG:4326")
+    counts: dict[str, int] = {}
+    valid_geometry_seen = False
+    for feature in boundaries.get("features", []):
+        properties = feature.get("properties") or {}
+        adm_cd = str(properties.get("adm_cd") or "")
+        geometry_data = feature.get("geometry")
+        if not adm_cd or not geometry_data:
+            continue
+        try:
+            polygon = shape(geometry_data)
+        except (TypeError, ValueError):
+            continue
+        if polygon.is_empty:
+            continue
+        valid_geometry_seen = True
+        counts[adm_cd] = int(points.geometry.within(polygon).sum())
+    return counts if valid_geometry_seen else None
+
+
 def merge_daegu_boundaries(
     boundaries: dict | None,
     areas: gpd.GeoDataFrame,
     team_vulnerability: list[dict[str, Any]] | None = None,
-    district_shelter_counts: dict[str, int] | None = None,
+    citywide_shelters: gpd.GeoDataFrame | None = None,
     live_heat_score: float | None = None,
     include_dong_detail: bool = True,
 ) -> dict:
@@ -60,8 +89,6 @@ def merge_daegu_boundaries(
         for row in (team_vulnerability or [])
         if row.get("region_name")
     }
-    shelter_counts_available = district_shelter_counts is not None
-    district_shelter_counts = district_shelter_counts or {}
     if boundaries and boundaries.get("features"):
         result = deepcopy(boundaries)
     else:
@@ -69,6 +96,9 @@ def merge_daegu_boundaries(
             "type": "FeatureCollection",
             "features": list(areas.to_crs("EPSG:4326").__geo_interface__["features"]),
         }
+    dong_shelter_counts = count_shelters_by_boundary(result, citywide_shelters)
+    shelter_counts_available = dong_shelter_counts is not None
+    dong_shelter_counts = dong_shelter_counts or {}
 
     for feature in result.get("features", []):
         original = feature.get("properties") or {}
@@ -123,7 +153,7 @@ def merge_daegu_boundaries(
                 if live_heat_score is not None
                 else vulnerability_score
             )
-            raw_shelter_count = district_shelter_counts.get(str(district.get("region_name")))
+            raw_shelter_count = dong_shelter_counts.get(adm_cd)
             shelter_count = int(raw_shelter_count) if raw_shelter_count is not None else None
             properties = {
                 "region": api_name,

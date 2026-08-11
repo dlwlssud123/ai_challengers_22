@@ -17,7 +17,6 @@ from src.data.demo import DEFAULT_DONG_NAMES, make_demo_areas
 from src.data.http import DataSourceError, JsonCache
 from src.data.kma_surface import absolute_heat_hazard_score, fetch_latest_daegu_weather
 from src.data.safety_shelters import (
-    district_name_from_address,
     fetch_daegu_shelter_payload,
     normalize_safety_shelters,
 )
@@ -34,6 +33,7 @@ REQUIRED_REAL_AREA_COLUMNS = {
 class DatasetBundle:
     areas: gpd.GeoDataFrame
     shelters: gpd.GeoDataFrame
+    citywide_shelters: gpd.GeoDataFrame
     candidates: gpd.GeoDataFrame
     metadata: dict[str, Any]
 
@@ -224,14 +224,6 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
         }
     else:
         weather_context = read_weather_extremum_context(_find_source("weather_extremum.csv", "weather_extremum"))
-    district_counts: dict[str, int] | None = None
-    if (
-        shelter_source_mode in {"live", "cache"}
-        and not citywide_shelters.empty
-        and "address" in citywide_shelters
-    ):
-        districts = citywide_shelters["address"].map(district_name_from_address).dropna()
-        district_counts = {str(name): int(count) for name, count in districts.value_counts().items()}
     team_vulnerability = load_team_vulnerability(PROJECT_ROOT)
     team_records = team_vulnerability.where(team_vulnerability.notna(), None).to_dict("records")
 
@@ -249,7 +241,6 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
         "shelter_fetched_at": shelter_fetched_at,
         "shelter_warning": shelter_warning,
         "citywide_shelter_count": int(len(citywide_shelters)),
-        "district_shelter_counts": district_counts,
         "team_vulnerability": team_records,
         "assumptions": [
             "DEMO SAMPLE 행정동 경계·인구·동별기상" if not use_real_areas else "제공된 실제 행정동 자료",
@@ -257,7 +248,13 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
             "EPSG:5179 직선거리 기반 접근권역",
         ],
     }
-    return DatasetBundle(areas=areas, shelters=shelters, candidates=candidates, metadata=metadata)
+    return DatasetBundle(
+        areas=areas,
+        shelters=shelters,
+        citywide_shelters=citywide_shelters,
+        candidates=candidates,
+        metadata=metadata,
+    )
 
 
 def save_bundle(bundle: DatasetBundle, output_dir: Path = PROCESSED_DIR) -> None:

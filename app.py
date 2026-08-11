@@ -128,7 +128,9 @@ overview_geojson = merge_daegu_boundaries(
     raw_daegu_boundaries,
     artifacts.areas,
     artifacts.metadata.get("team_vulnerability"),
-    artifacts.metadata.get("district_shelter_counts"),
+    artifacts.citywide_shelters
+    if artifacts.metadata.get("shelter_source_mode") in {"live", "cache"}
+    else None,
     weather_context.get("heat_hazard_score"),
     include_dong_detail=False,
 )
@@ -197,13 +199,13 @@ with overview_info_column:
             st.metric("실시간 정책 우선순위", overview_properties["priority_display"])
             st.metric("사회·건강 취약도", overview_properties.get("vulnerability_display", "-"))
             st.metric("등급", overview_properties.get("district_grade", "-"))
-            st.metric("공공 API 쉼터", overview_properties.get("shelter_display", "데이터 연결 필요"))
+            st.metric("행정동 공공 API 쉼터", overview_properties.get("shelter_display", "데이터 연결 필요"))
             if not overview_properties.get("shelter_count_available"):
                 st.warning("배포 환경에서 무더위쉼터 API가 연결되지 않아 구·군별 시설 수를 표시할 수 없습니다.")
             st.caption(
                 f"고령인구 비율 {overview_properties.get('elderly_ratio', 0):.1f}% · "
                 f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
-                "현재 구·군 단위 결과이므로 같은 구의 행정동은 동일 점수로 표시됩니다."
+                "취약도는 구·군 단위로 동일하지만 쉼터 수는 선택한 행정동 경계 기준입니다."
             )
         else:
             st.info("현재는 행정경계 정보만 연결된 지역입니다.")

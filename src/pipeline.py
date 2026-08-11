@@ -20,6 +20,7 @@ from src.data.loader import DatasetBundle, build_source_dataset
 class AnalysisArtifacts:
     areas: gpd.GeoDataFrame
     shelters: gpd.GeoDataFrame
+    citywide_shelters: gpd.GeoDataFrame
     candidates: gpd.GeoDataFrame
     blindspots: gpd.GeoDataFrame
     cluster_profiles: list[dict[str, object]]
@@ -65,10 +66,10 @@ def run_analysis(
     return AnalysisArtifacts(
         areas=areas,
         shelters=source.shelters,
+        citywide_shelters=source.citywide_shelters,
         candidates=source.candidates,
         blindspots=blindspots,
         cluster_profiles=cluster_profiles,
         metadata=metadata,
     )
-
 
