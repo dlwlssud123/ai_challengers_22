@@ -41,3 +41,24 @@ def test_missing_values_do_not_break_scoring():
     assert scored["priority_score"].between(0, 100).all()
 
 
+def test_live_heat_score_contributes_absolute_hazard():
+    raw = gpd.GeoDataFrame(
+        [
+            {
+                "adm_cd": "A",
+                "adm_name": "관측동",
+                "population": 1000,
+                "elderly_population": 200,
+                "temperature": 30.0,
+                "humidity": 60.0,
+                "live_heat_score": 80.0,
+                "geometry": box(1_000_000, 1_800_000, 1_001_000, 1_801_000),
+            }
+        ],
+        crs="EPSG:5179",
+    )
+
+    scored = calculate_risk_scores(prepare_areas(raw))
+
+    assert scored.iloc[0]["heat_score"] == 40.0
+

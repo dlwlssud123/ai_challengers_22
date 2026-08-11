@@ -5,7 +5,11 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 
-def test_dashboard_renders_and_runs_spatial_prescription():
+def test_dashboard_renders_and_runs_spatial_prescription(monkeypatch):
+    monkeypatch.setenv("SGIS_CONSUMER_KEY", "")
+    monkeypatch.setenv("SGIS_CONSUMER_SECRET", "")
+    monkeypatch.setenv("SAFETY_DATA_SERVICE_KEY", "")
+    monkeypatch.setenv("KMA_AUTH_KEY", "")
     app_path = Path(__file__).resolve().parents[1] / "app.py"
     app = AppTest.from_file(app_path, default_timeout=30).run()
     assert not app.exception

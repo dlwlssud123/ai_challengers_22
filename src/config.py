@@ -69,7 +69,10 @@ class Settings:
     sgis_consumer_key: str | None = None
     sgis_consumer_secret: str | None = None
     sgis_adm_cd: str | None = None
+    safety_data_shelter_api_url: str | None = None
+    safety_data_service_key: str | None = None
     kma_auth_key: str | None = None
+    kma_surface_api_url: str | None = None
     openai_api_key: str | None = None
     openai_model: str | None = None
     vworld_api_key: str | None = None
@@ -91,7 +94,10 @@ class Settings:
             sgis_consumer_key=_setting("SGIS_CONSUMER_KEY"),
             sgis_consumer_secret=_setting("SGIS_CONSUMER_SECRET"),
             sgis_adm_cd=_setting("SGIS_ADM_CD"),
+            safety_data_shelter_api_url=_setting("SAFETY_DATA_SHELTER_API_URL"),
+            safety_data_service_key=_setting("SAFETY_DATA_SERVICE_KEY"),
             kma_auth_key=_setting("KMA_AUTH_KEY"),
+            kma_surface_api_url=_setting("KMA_SURFACE_API_URL"),
             openai_api_key=_setting("OPENAI_API_KEY"),
             openai_model=_setting("OPENAI_MODEL"),
             vworld_api_key=_setting("VWORLD_API_KEY"),

@@ -11,10 +11,18 @@ from typing import Any
 
 import geopandas as gpd
 
-from src.config import DATA_DIR, PROCESSED_DIR, RAW_DIR, Settings, ensure_data_dirs
+from src.config import CACHE_DIR, DATA_DIR, PROCESSED_DIR, PROJECT_ROOT, RAW_DIR, Settings, ensure_data_dirs
 from src.data.candidates import generate_grid_candidates, load_candidate_file
 from src.data.demo import DEFAULT_DONG_NAMES, make_demo_areas
+from src.data.http import DataSourceError, JsonCache
+from src.data.kma_surface import absolute_heat_hazard_score, fetch_latest_daegu_weather
+from src.data.safety_shelters import (
+    district_name_from_address,
+    fetch_daegu_shelter_payload,
+    normalize_safety_shelters,
+)
 from src.data.shelters import discover_shelter_file, load_shelters, read_tabular
+from src.data.team_vulnerability import load_team_vulnerability
 
 
 REQUIRED_REAL_AREA_COLUMNS = {
@@ -102,7 +110,24 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
 
     ensure_data_dirs()
     shelter_path = discover_shelter_file(RAW_DIR)
-    shelters = load_shelters(shelter_path)
+    fallback_shelters = load_shelters(shelter_path)
+    shelters = fallback_shelters
+    citywide_shelters = fallback_shelters
+    shelter_source_mode = "local_csv"
+    shelter_fetched_at = None
+    shelter_warning = None
+    if settings.safety_data_shelter_api_url and settings.safety_data_service_key:
+        try:
+            payload, shelter_source_mode, shelter_fetched_at = fetch_daegu_shelter_payload(
+                api_url=settings.safety_data_shelter_api_url,
+                service_key=settings.safety_data_service_key,
+                timeout=settings.api_timeout_seconds,
+                cache=JsonCache(CACHE_DIR),
+            )
+            citywide_shelters = normalize_safety_shelters(payload)
+            shelters = citywide_shelters
+        except DataSourceError as exc:
+            shelter_warning = str(exc)
     area_path = RAW_DIR / "areas.geojson"
     use_real_areas = False
     if area_path.exists() and settings.demo_mode != "true":
@@ -115,9 +140,33 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
         areas = areas.to_crs(settings.display_crs)
         areas["is_demo"] = False
         use_real_areas = True
+        if shelter_source_mode in {"live", "cache"}:
+            quality = dict(citywide_shelters.attrs.get("quality", {}))
+            area_union = areas.to_crs(settings.display_crs).geometry.union_all()
+            shelters = citywide_shelters[citywide_shelters.geometry.intersects(area_union)].copy()
+            quality["analysis_region_rows"] = int(len(shelters))
+            shelters.attrs["quality"] = quality
     else:
         names = _administrative_names(_find_source("administrative_facilities.csv", "행정기관"))
         areas = make_demo_areas(shelters, names)
+
+    live_weather = None
+    live_weather_mode = None
+    live_weather_fetched_at = None
+    weather_warning = None
+    if settings.kma_surface_api_url and settings.kma_auth_key:
+        try:
+            live_weather, live_weather_mode, live_weather_fetched_at = fetch_latest_daegu_weather(
+                api_url=settings.kma_surface_api_url,
+                auth_key=settings.kma_auth_key,
+                timeout=settings.api_timeout_seconds,
+                cache=JsonCache(CACHE_DIR),
+            )
+            areas["live_heat_score"] = absolute_heat_hazard_score(
+                live_weather["temperature_c"], live_weather["humidity_percent"]
+            )
+        except DataSourceError as exc:
+            weather_warning = str(exc)
 
     candidate_path = RAW_DIR / "candidate_sites.csv"
     if candidate_path.exists():
@@ -132,7 +181,11 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
         )
         candidate_mode = "공간 후보지역(DEMO): 실제 설치 가능 시설이 아님"
 
-    actual_source_names = [shelter_path.name]
+    actual_source_names = [
+        "재난안전데이터공유플랫폼 DSSP-IF-10942"
+        if shelter_source_mode in {"live", "cache"}
+        else shelter_path.name
+    ]
     if use_real_areas:
         actual_source_names.append(area_path.name)
     optional_sources = (
@@ -144,7 +197,21 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
         source = _find_source(name, token)
         if source.exists():
             actual_source_names.append(source.name)
-    if use_real_areas:
+    if live_weather:
+        weather_context = {
+            "station": "대구 ASOS 143",
+            "period": live_weather["observed_at_kst"],
+            "temperature_c": live_weather["temperature_c"],
+            "humidity_percent": live_weather["humidity_percent"],
+            "heat_hazard_score": absolute_heat_hazard_score(
+                live_weather["temperature_c"], live_weather["humidity_percent"]
+            ),
+            "variables": "TA/HM",
+            "mode": live_weather_mode,
+            "fetched_at": live_weather_fetched_at,
+            "application": "현재 절대위험 50% + 행정동 기상 스냅샷의 상대위험 50%",
+        }
+    elif use_real_areas:
         first_area = areas.iloc[0]
         base_date = str(first_area.get("weather_base_date", ""))
         base_time = str(first_area.get("weather_base_time", ""))
@@ -157,6 +224,13 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
         }
     else:
         weather_context = read_weather_extremum_context(_find_source("weather_extremum.csv", "weather_extremum"))
+    district_counts: dict[str, int] = {}
+    if not citywide_shelters.empty and "address" in citywide_shelters:
+        districts = citywide_shelters["address"].map(district_name_from_address).dropna()
+        district_counts = {str(name): int(count) for name, count in districts.value_counts().items()}
+    team_vulnerability = load_team_vulnerability(PROJECT_ROOT)
+    team_records = team_vulnerability.where(team_vulnerability.notna(), None).to_dict("records")
+
     metadata = {
         "region": settings.target_region_name,
         "analysis_year": settings.analysis_year,
@@ -165,7 +239,14 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
         "candidate_mode": candidate_mode,
         "actual_sources": actual_source_names,
         "weather_context": weather_context,
+        "weather_warning": weather_warning,
         "shelter_quality": shelters.attrs.get("quality", {}),
+        "shelter_source_mode": shelter_source_mode,
+        "shelter_fetched_at": shelter_fetched_at,
+        "shelter_warning": shelter_warning,
+        "citywide_shelter_count": int(len(citywide_shelters)),
+        "district_shelter_counts": district_counts,
+        "team_vulnerability": team_records,
         "assumptions": [
             "DEMO SAMPLE 행정동 경계·인구·동별기상" if not use_real_areas else "제공된 실제 행정동 자료",
             "행정동 내부 고령인구 균등분포",

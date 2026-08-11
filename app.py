@@ -6,6 +6,7 @@ from html import escape
 import logging
 
 import pandas as pd
+import pydeck as pdk
 import streamlit as st
 from streamlit_folium import st_folium
 
@@ -14,8 +15,10 @@ from src.analysis.optimizer import optimize_candidates
 from src.analysis.simulation import SimulationResult, simulate_installation
 from src.config import Settings
 from src.pipeline import AnalysisArtifacts, run_analysis
+from src.sgis_client import SGISClientError, load_daegu_heatmap_geojson
 from src.spatial_policy import build_policy_payload, recommend_spatial_policy
 from src.ui.components import format_people, format_rate, render_before_after
+from src.ui.daegu_overview import merge_daegu_boundaries
 from src.ui.map import build_map, nearest_area_name
 
 
@@ -81,9 +84,17 @@ st.markdown(
 )
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=3_600, show_spinner=False)
 def cached_analysis(radius_m: int, threshold: float) -> AnalysisArtifacts:
     return run_analysis(Settings.from_env(), access_radius_m=radius_m, risk_threshold=threshold)
+
+
+@st.cache_data(ttl=21_600, show_spinner=False)
+def cached_daegu_boundaries() -> tuple[dict | None, str, str | None]:
+    try:
+        return load_daegu_heatmap_geojson(), "SGIS 대구 행정동 실시간 경계", None
+    except (SGISClientError, ValueError) as exc:
+        return None, "수성구 분석 스냅샷 경계", str(exc)
 
 
 settings = Settings.from_env()
@@ -147,6 +158,117 @@ st.caption(
     f"기준시점: {artifacts.metadata['analysis_timestamp']} · "
     f"기상 관측: {weather_period or 'DEMO/참고자료'} · 후보 모드: {artifacts.metadata['candidate_mode']}"
 )
+if artifacts.metadata.get("shelter_warning"):
+    st.warning(f"쉼터 API 대신 기존 로컬 자료를 사용 중입니다: {artifacts.metadata['shelter_warning']}")
+if artifacts.metadata.get("weather_warning"):
+    st.info(f"기상청 최신 관측은 아직 연결 대기 중입니다: {artifacts.metadata['weather_warning']}")
+
+st.subheader("대구 전체 행정동 현황")
+st.caption(
+    "기존 SGIS 행정경계를 기준으로 모든 행정동을 선택할 수 있습니다. "
+    "9개 구·군에는 팀 취약도 분석을, 수성구 23개 행정동에는 상세 공간분석을 연결했습니다."
+)
+raw_daegu_boundaries, overview_source, overview_warning = cached_daegu_boundaries()
+overview_geojson = merge_daegu_boundaries(
+    raw_daegu_boundaries,
+    artifacts.areas,
+    artifacts.metadata.get("team_vulnerability"),
+    artifacts.metadata.get("district_shelter_counts"),
+    weather_context.get("heat_hazard_score"),
+)
+selected_overview_region = st.session_state.get("overview_selected_region")
+for feature in overview_geojson.get("features", []):
+    properties = feature.get("properties") or {}
+    if properties.get("region") == selected_overview_region:
+        properties["line_color"] = [255, 255, 255, 255]
+        properties["line_width"] = 5
+    else:
+        properties["line_width"] = 1
+
+overview_map_column, overview_info_column = st.columns([2.2, 1])
+with overview_map_column:
+    overview_layer = pdk.Layer(
+        "GeoJsonLayer",
+        id="daegu-administrative-boundaries",
+        data=overview_geojson,
+        pickable=True,
+        auto_highlight=True,
+        filled=True,
+        stroked=True,
+        opacity=0.82,
+        get_fill_color="properties.fill_color",
+        get_line_color="properties.line_color",
+        get_line_width="properties.line_width",
+        line_width_min_pixels=1,
+    )
+    overview_event = st.pydeck_chart(
+        pdk.Deck(
+            map_style=None,
+            initial_view_state=pdk.ViewState(latitude=35.87, longitude=128.60, zoom=10.55),
+            layers=[overview_layer],
+            tooltip={
+                "html": (
+                    "<b>{region}</b><br/>행정동 코드 {adm_cd}<br/>"
+                    "{analysis_status}<br/>정책 우선순위 {priority_display}"
+                ),
+                "style": {"backgroundColor": "#292524", "color": "white"},
+            },
+        ),
+        height=460,
+        width="stretch",
+        on_select="rerun",
+        selection_mode="single-object",
+        key="daegu_overview_map",
+    )
+    selected_objects = overview_event.selection.get("objects", {}).get(
+        "daegu-administrative-boundaries", []
+    )
+    if selected_objects:
+        selected_object = selected_objects[0]
+        clicked_properties = selected_object.get("properties", selected_object)
+        clicked_region = clicked_properties.get("region")
+        if clicked_region:
+            st.session_state["overview_selected_region"] = clicked_region
+            st.session_state["overview_selected_properties"] = clicked_properties
+        if clicked_properties.get("has_analysis") and clicked_properties.get("adm_name"):
+            st.session_state["selected_adm_name"] = clicked_properties["adm_name"]
+
+with overview_info_column:
+    overview_properties = st.session_state.get("overview_selected_properties")
+    if overview_properties:
+        st.markdown(f"### {overview_properties['region']}")
+        st.caption(f"행정동 코드: {overview_properties['adm_cd']}")
+        if overview_properties.get("has_analysis"):
+            st.success("수성구 상세 분석 데이터가 연결된 지역입니다.")
+            st.metric("정책 우선순위", overview_properties["priority_display"])
+            st.metric("65세 이상 인구", overview_properties["elderly_display"])
+            st.caption("아래 수성구 상세지도도 같은 행정동으로 선택됩니다.")
+        elif overview_properties.get("has_district_analysis"):
+            st.success(overview_properties["analysis_status"])
+            st.metric("실시간 정책 우선순위", overview_properties["priority_display"])
+            st.metric("사회·건강 취약도", overview_properties.get("vulnerability_display", "-"))
+            st.metric("등급", overview_properties.get("district_grade", "-"))
+            st.metric("공공 API 쉼터", f"{overview_properties.get('shelter_count', 0):,}곳")
+            st.caption(
+                f"고령인구 비율 {overview_properties.get('elderly_ratio', 0):.1f}% · "
+                f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
+                "현재 구·군 단위 결과이므로 같은 구의 행정동은 동일 점수로 표시됩니다."
+            )
+        else:
+            st.info("현재는 행정경계 정보만 연결된 지역입니다.")
+            st.write("표시 가능한 정보")
+            st.write("- 행정동명")
+            st.write("- 공식 행정동 코드")
+            st.write("- 실제 행정경계")
+            st.warning("취약도·인구·쉼터 분석은 해당 구의 원천데이터 연결 후 표시됩니다.")
+    else:
+        st.info("지도에서 행정동을 클릭하면 해당 지역 정보를 표시합니다.")
+    st.caption(f"경계 출처: {overview_source}")
+    if overview_warning:
+        st.warning(f"SGIS 실시간 경계를 불러오지 못해 저장된 수성구 경계를 표시합니다: {overview_warning}")
+
+st.divider()
+st.subheader("수성구 상세 분석")
 
 before_metrics = total_coverage_metrics(artifacts.areas)
 top_area = artifacts.areas.nlargest(1, "priority_score").iloc[0]

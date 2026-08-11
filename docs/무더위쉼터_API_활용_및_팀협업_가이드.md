@@ -1,5 +1,7 @@
 # 무더위쉼터 OpenAPI 활용 및 팀 협업 가이드
 
+> 구현 상태(2026-08-11): 재난안전데이터공유플랫폼 `DSSP-IF-10942` 연동이 완료됐다. 현재 코드는 `src/data/safety_shelters.py`에서 좌표 범위 페이지네이션, 대구 주소 재필터링, 표준 스키마 변환과 마지막 정상 캐시를 처리한다. 아래 내용 중 공공데이터포털 승인 대기 관련 설명은 초기 설계 기록으로 보존한다.
+
 작성일: 2026-08-11  
 대상 API: 행정안전부_무더위쉼터 (공공데이터포털 데이터 ID `15138456`)
 
@@ -53,19 +55,17 @@
 서비스키 자체는 메신저, 문서, GitHub Issue 또는 소스 코드로 공유하지 않는다. Streamlit Cloud에서는 앱의 `Settings → Secrets`, 로컬에서는 `.env`에 각자 넣는다.
 
 ```dotenv
-PUBLIC_DATA_SHELTER_API_URL=https://활용신청후확인한-실제-요청주소
-PUBLIC_DATA_SERVICE_KEY=발급받은키
-PUBLIC_DATA_SHELTER_TIMEOUT_SECONDS=10
-PUBLIC_DATA_SHELTER_CACHE_TTL_SECONDS=21600
+SAFETY_DATA_SHELTER_API_URL=https://www.safetydata.go.kr/V2/api/DSSP-IF-10942
+SAFETY_DATA_SERVICE_KEY=발급받은키
+API_TIMEOUT_SECONDS=10
 ```
 
 Streamlit Cloud TOML:
 
 ```toml
-PUBLIC_DATA_SHELTER_API_URL = "https://활용신청후확인한-실제-요청주소"
-PUBLIC_DATA_SERVICE_KEY = "발급받은키"
-PUBLIC_DATA_SHELTER_TIMEOUT_SECONDS = "10"
-PUBLIC_DATA_SHELTER_CACHE_TTL_SECONDS = "21600"
+SAFETY_DATA_SHELTER_API_URL = "https://www.safetydata.go.kr/V2/api/DSSP-IF-10942"
+SAFETY_DATA_SERVICE_KEY = "발급받은키"
+API_TIMEOUT_SECONDS = "10"
 ```
 
 공공데이터포털에서 일반키와 URL 인코딩키를 함께 보여주는 경우가 있다. Python `requests.get(..., params=...)`에 키를 넣으면 라이브러리가 인코딩하므로 키가 이중 인코딩되지 않았는지 실제 성공 요청으로 확인한다.
@@ -211,14 +211,14 @@ PUBLIC_DATA_SHELTER_CACHE_TTL_SECONDS = "21600"
 
 ## 7. 권장 작업 순서
 
-1. 담당자 1명이 신규 API 활용신청을 완료하고 요청 URL·명세·샘플 응답을 공유한다.
-2. 개발팀이 `shelter_client.py`와 페이지네이션·오류 처리 테스트를 만든다.
-3. 개발팀과 데이터팀이 샘플 응답을 보고 원본 컬럼과 내부 스키마 대응표를 확정한다.
-4. 개발팀이 정규화·캐시·CSV Fallback을 구현한다.
-5. 프론트엔드가 Mock 시설을 표준 쉼터 목록으로 교체해 실제 마커와 상세 패널을 표시한다.
-6. 데이터팀이 같은 목록으로 서비스권·사각지대·접근성 지표를 계산한다.
-7. 개발팀이 `src/accessibility.py`의 provider에 분석 함수를 연결한다.
-8. API 장애, 빈 응답, 좌표 누락, 키 미설정 상황을 테스트한다.
+1. ~~신규 API 활용신청과 실제 요청 URL·샘플 응답 확보~~ — 완료
+2. ~~페이지네이션·오류 처리 클라이언트 구현~~ — `src/data/safety_shelters.py` 완료
+3. ~~원본 컬럼과 내부 표준 스키마 대응~~ — 완료
+4. ~~정규화·캐시·CSV Fallback 구현~~ — 완료
+5. ~~실제 지도 마커와 시설 상세 패널 연결~~ — 완료
+6. ~~같은 시설 목록으로 서비스권·사각지대·접근성 계산~~ — 완료
+7. 시설 ID와 행정동 코드의 장기 운영용 매핑 테이블 보강
+8. 발표 전 API·캐시·CSV 세 경로 리허설
 
 ## 8. 완료 기준
 
@@ -235,12 +235,12 @@ PUBLIC_DATA_SHELTER_CACHE_TTL_SECONDS = "21600"
 
 ### 개발팀
 
-- [ ] 공공데이터포털 신규 API 활용신청
-- [ ] 실제 요청 URL·샘플 응답 확보
-- [ ] 서버 측 API 클라이언트와 Secrets 설정
-- [ ] 표준 스키마 정규화, 캐시, Fallback 구현
-- [ ] 지도 마커와 시설 상세 패널 연결
-- [ ] 키 비노출·오류·페이지네이션 테스트
+- [x] 재난안전데이터공유플랫폼 API 활용신청
+- [x] 실제 요청 URL·샘플 응답 확보
+- [x] 서버 측 API 클라이언트와 Secrets 설정
+- [x] 표준 스키마 정규화, 캐시, Fallback 구현
+- [x] 지도 마커와 시설 상세 패널 연결
+- [x] 키 비노출·오류·페이지네이션 테스트
 
 ### 데이터팀
 

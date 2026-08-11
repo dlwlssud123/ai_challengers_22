@@ -22,9 +22,16 @@ def calculate_risk_scores(
     norm_humidity = safe_minmax(result["humidity"])
     norm_elderly_ratio = safe_minmax(result["elderly_ratio"])
     norm_elderly_density = safe_minmax(result["elderly_density"])
-    result["heat_score"] = 100 * (
+    relative_heat_score = 100 * (
         weights.temperature * norm_temperature + weights.humidity * norm_humidity
     )
+    if "live_heat_score" in result:
+        result["heat_score"] = (
+            0.5 * relative_heat_score
+            + 0.5 * result["live_heat_score"].astype(float).clip(0, 100)
+        )
+    else:
+        result["heat_score"] = relative_heat_score
     result["vulnerability_score"] = 100 * (
         weights.elderly_ratio * norm_elderly_ratio
         + weights.elderly_density * norm_elderly_density
@@ -52,5 +59,4 @@ def refresh_priority_score(
         + weights.access * result["access_score"]
     ).clip(0, 100)
     return result
-
 

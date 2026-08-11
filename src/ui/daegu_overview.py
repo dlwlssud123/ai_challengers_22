@@ -1,0 +1,168 @@
+"""Merge the live SGIS Daegu boundaries with available district analysis."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any
+
+import geopandas as gpd
+
+
+def normalize_administrative_name(value: Any) -> str:
+    return (
+        str(value or "")
+        .replace(" ", "")
+        .replace("·", "")
+        .replace("ㆍ", "")
+        .replace(".", "")
+        .replace("・", "")
+    )
+
+
+def _score_color(score: float) -> list[int]:
+    if score >= 85:
+        return [220, 38, 38, 200]
+    if score >= 70:
+        return [249, 115, 22, 190]
+    if score >= 50:
+        return [250, 204, 21, 175]
+    return [44, 123, 182, 160]
+
+
+def _analysis_lookup(areas: gpd.GeoDataFrame) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for row in areas.to_crs("EPSG:4326").itertuples():
+        rows[normalize_administrative_name(row.adm_name)] = {
+            "adm_cd": str(row.adm_cd),
+            "adm_name": str(row.adm_name),
+            "priority_score": float(row.priority_score),
+            "heat_score": float(row.heat_score),
+            "vulnerability_score": float(row.vulnerability_score),
+            "access_score": float(row.access_score),
+            "elderly_population": int(round(float(row.elderly_population))),
+        }
+    return rows
+
+
+def merge_daegu_boundaries(
+    boundaries: dict | None,
+    areas: gpd.GeoDataFrame,
+    team_vulnerability: list[dict[str, Any]] | None = None,
+    district_shelter_counts: dict[str, int] | None = None,
+    live_heat_score: float | None = None,
+) -> dict:
+    """Return a selectable citywide layer with dong- or district-level analysis."""
+
+    lookup = _analysis_lookup(areas)
+    district_lookup = {
+        normalize_administrative_name(row.get("region_name")): row
+        for row in (team_vulnerability or [])
+        if row.get("region_name")
+    }
+    district_shelter_counts = district_shelter_counts or {}
+    if boundaries and boundaries.get("features"):
+        result = deepcopy(boundaries)
+    else:
+        result = {
+            "type": "FeatureCollection",
+            "features": list(areas.to_crs("EPSG:4326").__geo_interface__["features"]),
+        }
+
+    for feature in result.get("features", []):
+        original = feature.get("properties") or {}
+        api_name = str(
+            original.get("adm_nm")
+            or original.get("region")
+            or original.get("adm_name")
+            or "행정동명 없음"
+        )
+        normalized_api_name = normalize_administrative_name(api_name)
+        match = next(
+            (
+                values
+                for normalized_name, values in lookup.items()
+                if normalized_api_name.endswith(normalized_name)
+                or normalized_name.endswith(normalized_api_name)
+            ),
+            None,
+        )
+        district_match = next(
+            (
+                (district_name, values)
+                for district_name, values in district_lookup.items()
+                if district_name and district_name in normalized_api_name
+            ),
+            None,
+        )
+        adm_cd = str(original.get("adm_cd") or (match or {}).get("adm_cd") or "-")
+        if match:
+            score = match["priority_score"]
+            properties = {
+                "region": api_name,
+                "adm_name": match["adm_name"],
+                "adm_cd": adm_cd,
+                "has_analysis": True,
+                "analysis_status": "수성구 상세 분석 연결",
+                "priority_score": score,
+                "priority_display": f"{score:.1f}점",
+                "elderly_population": match["elderly_population"],
+                "elderly_display": f"{match['elderly_population']:,}명",
+                "heat_score": match["heat_score"],
+                "vulnerability_score": match["vulnerability_score"],
+                "access_score": match["access_score"],
+                "fill_color": _score_color(score),
+                "line_color": [255, 255, 255, 220],
+            }
+        elif district_match:
+            district_name, district = district_match
+            vulnerability_score = float(district.get("vulnerability_score") or 0)
+            score = (
+                0.65 * vulnerability_score + 0.35 * float(live_heat_score)
+                if live_heat_score is not None
+                else vulnerability_score
+            )
+            shelter_count = int(district_shelter_counts.get(str(district.get("region_name")), 0))
+            properties = {
+                "region": api_name,
+                "adm_name": api_name,
+                "adm_cd": adm_cd,
+                "has_analysis": False,
+                "has_district_analysis": True,
+                "analysis_status": f"{district.get('region_name')} 구·군 단위 팀 분석",
+                "priority_score": score,
+                "priority_display": f"{score:.1f}점",
+                "district_grade": str(district.get("grade") or "-"),
+                "district_cluster": int(district.get("cluster") or 0),
+                "elderly_ratio": float(district.get("elderly_ratio") or 0),
+                "heat_illness_count": float(district.get("heat_illness_count") or 0),
+                "shelter_count": shelter_count,
+                "elderly_population": None,
+                "elderly_display": "구·군 결과 참조",
+                "heat_score": None,
+                "vulnerability_score": vulnerability_score,
+                "vulnerability_display": f"{vulnerability_score:.1f}점",
+                "live_heat_score": live_heat_score,
+                "access_score": None,
+                "fill_color": _score_color(score),
+                "line_color": [255, 255, 255, 180],
+            }
+        else:
+            properties = {
+                "region": api_name,
+                "adm_name": api_name,
+                "adm_cd": adm_cd,
+                "has_analysis": False,
+                "has_district_analysis": False,
+                "analysis_status": "행정경계만 연결 · 분석 데이터 준비 중",
+                "priority_score": None,
+                "priority_display": "분석 전",
+                "elderly_population": None,
+                "elderly_display": "데이터 미연결",
+                "heat_score": None,
+                "vulnerability_score": None,
+                "access_score": None,
+                "fill_color": [100, 116, 139, 55],
+                "line_color": [100, 116, 139, 170],
+            }
+        feature["properties"] = properties
+    return result
