@@ -78,6 +78,9 @@ class AlanPolicyClient:
             "규칙:\n1. 입력에 없는 위치, 비용, 통계값을 만들지 마세요.\n2. target_location은 recommended_locations에 포함된 이름만 사용하세요.\n"
             "3. 의료 효과나 온열질환 감소율을 단정하지 마세요.\n4. 기대효과는 접근 가능 인구, 접근거리, 사각지대 변화로 설명하세요.\n"
             "5. 정책은 최대 3개로 제한하고 JSON 외 문장을 출력하지 마세요.\n"
+            "6. 분석 데이터에서 제공된 구체적인 취약 요인(main_causes, vulnerability_score 등)을 바탕으로 "
+            "'해당 지역은 이러한 요인이 취약하므로 어떤 구체적 대책이나 정책을 도입하는 것이 타당하다'는 설득력 있고 "
+            "데이터 지향적인 인과 관계가 드러나도록 요약(summary) 및 추천 정책의 사유(reason)를 구조화해 답변해 주세요.\n"
             f"입력 사실:\n{json.dumps(facts, ensure_ascii=False)}\n출력 JSON 스키마:\n{json.dumps(schema, ensure_ascii=False)}"
         )
 
@@ -118,9 +121,28 @@ class AlanPolicyClient:
                 params = {
                     "content": prompt,
                     "question": prompt,
-                    "client_id": key
+                    "client_id": key,
+                    "client-id": key,
+                    "api_key": key,
+                    "apikey": key,
+                    "key": key
                 }
-                response = requests.get(self.endpoint, params=params, timeout=self.timeout, verify=False)
+                headers = {
+                    "client_id": key,
+                    "client-id": key,
+                    "api_key": key,
+                    "apikey": key,
+                    "X-API-KEY": key,
+                    "X-Client-ID": key,
+                    "Authorization": f"Bearer {key}"
+                }
+                response = requests.get(
+                    self.endpoint, 
+                    params=params, 
+                    headers=headers, 
+                    timeout=self.timeout, 
+                    verify=False
+                )
                 response.raise_for_status()
                 payload = response.json()
                 
