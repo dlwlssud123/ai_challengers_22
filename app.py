@@ -321,70 +321,62 @@ with overview_info_column:
     if overview_properties:
         st.markdown(f"### {overview_properties['region']}")
         st.caption(f"행정동 코드: {overview_properties['adm_cd']}")
-        if overview_properties.get("has_district_analysis"):
-            st.success(overview_properties["analysis_status"])
-            st.metric("종합 취약도", overview_properties.get("priority_display", "-"))
-            st.metric("동별 쉼터 접근성", overview_properties.get("shelter_accessibility_display", "-"))
-            st.metric("행정동 고령인구", overview_properties.get("elderly_display", "데이터 연결 필요"))
-            st.metric("등급", overview_properties.get("district_grade", "-"))
-            st.metric("행정동 공공 API 쉼터", overview_properties.get("shelter_display", "데이터 연결 필요"))
-            if not overview_properties.get("shelter_count_available"):
-                st.warning("배포 환경에서 무더위쉼터 API가 연결되지 않아 행정동별 시설 수를 표시할 수 없습니다.")
-            st.caption(
-                f"고령인구 비율 {overview_properties.get('elderly_ratio', 0):.1f}% · "
-                f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
-                "취약도는 사회·기상·쉼터 부족을 종합한 실시간 취약도이며, 쉼터 접근성은 고령인구 대비 쉼터 공급 능력을 대구시 내에서 상대 비교하여 정규화(Min-Max)한 점수입니다."
-            )
+        st.success(overview_properties.get("analysis_status", "분석 연결 완료"))
+        st.metric("종합 취약도", overview_properties.get("priority_display", "-"))
+        st.metric("동별 쉼터 접근성", overview_properties.get("shelter_accessibility_display", "-"))
+        st.metric("행정동 고령인구", overview_properties.get("elderly_display", "데이터 연결 필요"))
+        st.metric("등급", overview_properties.get("district_grade", "-"))
+        st.metric("행정동 공공 API 쉼터", overview_properties.get("shelter_display", "데이터 연결 필요"))
+        if not overview_properties.get("shelter_count_available"):
+            st.warning("배포 환경에서 무더위쉼터 API가 연결되지 않아 행정동별 시설 수를 표시할 수 없습니다.")
+        st.caption(
+            f"고령인구 비율 {overview_properties.get('elderly_ratio', 0):.1f}% · "
+            f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
+            "취약도는 사회·기상·쉼터 부족을 종합한 실시간 취약도이며, 쉼터 접근성은 고령인구 대비 쉼터 공급 능력을 대구시 내에서 상대 비교하여 정규화(Min-Max)한 점수입니다."
+        )
+        
+        # AI 버튼 부착
+        st.markdown("---")
+        st.subheader("🤖 AI 폭염 도시처방 브리핑")
+        
+        if st.button("AI 폭염 대응 추천 받기", key="run_ai_analysis_btn"):
+            with st.spinner("AI가 행정동별 폭염 취약성과 쉼터 분포를 바탕으로 최적의 대책을 수립 중입니다..."):
+                try:
+                    from src.integration import run_policy_analysis
+                    ai_result = run_policy_analysis(
+                        region=overview_properties['region'],
+                        budget=int(budget),
+                        max_facilities=int(max_facilities),
+                        use_mock=False
+                    )
+                    if ai_result.get("status") == "success":
+                        st.session_state["ai_briefing_result"] = ai_result
+                    else:
+                        st.error("AI 브리핑 생성에 실패했습니다.")
+                except Exception as e:
+                    st.error(f"AI 호출 오류: {e}")
+                    
+        ai_briefing = st.session_state.get("ai_briefing_result")
+        if ai_briefing and ai_briefing.get("region") == overview_properties['region']:
+            policy = ai_briefing.get("policy_recommendation", {})
+            st.success("✅ AI 처방 브리핑 생성 완료")
+            st.markdown(f"**📝 종합 상황 요약:**\n{policy.get('summary', '-')}")
+            st.markdown(f"**🚨 대응 조치 우선순위:** `{policy.get('priority_level', '보통')}`")
             
-            # AI 버튼 부착
-            st.markdown("---")
-            st.subheader("🤖 AI 폭염 도시처방 브리핑")
+            st.markdown("**💡 추천 대응 정책:**")
+            for idx, p_item in enumerate(policy.get("recommended_policies", [])):
+                st.markdown(f"**{idx+1}. {p_item.get('policy_name', '추천 정책')}** (설치 예정지: `{p_item.get('target_location', '-')}`)")
+                st.markdown(f"- *추천 사유:* {p_item.get('reason', '-')}")
+                st.markdown(f"- *기대 효과:* {p_item.get('expected_effect', '-')}")
+                if p_item.get("action_plan"):
+                    st.markdown("- *구체적 실행 방안:*")
+                    for plan in p_item.get("action_plan", []):
+                        st.markdown(f"  - {plan}")
             
-            if st.button("AI 폭염 대응 추천 받기", key="run_ai_analysis_btn"):
-                with st.spinner("AI가 행정동별 폭염 취약성과 쉼터 분포를 바탕으로 최적의 대책을 수립 중입니다..."):
-                    try:
-                        from src.integration import run_policy_analysis
-                        ai_result = run_policy_analysis(
-                            region=overview_properties['region'],
-                            budget=int(budget),
-                            max_facilities=int(max_facilities),
-                            use_mock=False
-                        )
-                        if ai_result.get("status") == "success":
-                            st.session_state["ai_briefing_result"] = ai_result
-                        else:
-                            st.error("AI 브리핑 생성에 실패했습니다.")
-                    except Exception as e:
-                        st.error(f"AI 호출 오류: {e}")
-                        
-            ai_briefing = st.session_state.get("ai_briefing_result")
-            if ai_briefing and ai_briefing.get("region") == overview_properties['region']:
-                policy = ai_briefing.get("policy_recommendation", {})
-                st.success("✅ AI 처방 브리핑 생성 완료")
-                st.markdown(f"**📝 종합 상황 요약:**\n{policy.get('summary', '-')}")
-                st.markdown(f"**🚨 대응 조치 우선순위:** `{policy.get('priority_level', '보통')}`")
-                
-                st.markdown("**💡 추천 대응 정책:**")
-                for idx, p_item in enumerate(policy.get("recommended_policies", [])):
-                    st.markdown(f"**{idx+1}. {p_item.get('policy_name', '추천 정책')}** (설치 예정지: `{p_item.get('target_location', '-')}`)")
-                    st.markdown(f"- *추천 사유:* {p_item.get('reason', '-')}")
-                    st.markdown(f"- *기대 효과:* {p_item.get('expected_effect', '-')}")
-                    if p_item.get("action_plan"):
-                        st.markdown("- *구체적 실행 방안:*")
-                        for plan in p_item.get("action_plan", []):
-                            st.markdown(f"  - {plan}")
-                
-                if policy.get("limitations"):
-                    st.markdown("**⚠️ 활용 상의 한계점:**")
-                    for lim in policy.get("limitations", []):
-                        st.markdown(f"- {lim}")
-        else:
-            st.info("현재는 행정경계 정보만 연결된 지역입니다.")
-            st.write("표시 가능한 정보")
-            st.write("- 행정동명")
-            st.write("- 공식 행정동 코드")
-            st.write("- 실제 행정경계")
-            st.warning("취약도·인구·쉼터 분석은 해당 구의 원천데이터 연결 후 표시됩니다.")
+            if policy.get("limitations"):
+                st.markdown("**⚠️ 활용 상의 한계점:**")
+                for lim in policy.get("limitations", []):
+                    st.markdown(f"- {lim}")
     else:
         st.info("지도에서 행정동을 클릭하면 해당 지역 정보를 표시합니다.")
     st.caption(f"경계 출처: {overview_source}")
