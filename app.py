@@ -154,20 +154,20 @@ st.caption(
     f"기준시점: {artifacts.metadata['analysis_timestamp']} · "
     f"기상 관측: {weather_period or 'DEMO/참고자료'}"
 )
-if artifacts.metadata.get("shelter_warning"):
-    warning_msg = artifacts.metadata['shelter_warning']
-    if "time out" in warning_msg.lower() or "connection" in warning_msg.lower() or "retries" in warning_msg.lower() or "timed out" in warning_msg.lower():
-        short_msg = "공공데이터 센터 통신 지연으로 인해 안정성을 위해 준비된 대구시 안전 쉼터 로컬 데이터(1,127곳)로 즉시 대체 구동합니다. (정상 작동)"
-    else:
-        short_msg = warning_msg
-    st.warning(f"ℹ️ {short_msg}")
-if artifacts.metadata.get("weather_warning"):
-    warning_msg = artifacts.metadata['weather_warning']
-    if "time out" in warning_msg.lower() or "connection" in warning_msg.lower() or "retries" in warning_msg.lower() or "timed out" in warning_msg.lower():
-        short_msg = "기상청 서버 통신 지연으로 인해 대구지역 기상 관측 참고 스냅샷 데이터(27.2°C, 습도 51%)로 즉시 대체 구동합니다. (정상 작동)"
-    else:
-        short_msg = warning_msg
-    st.info(f"ℹ️ {short_msg}")
+# if artifacts.metadata.get("shelter_warning"):
+#     warning_msg = artifacts.metadata['shelter_warning']
+#     if "time out" in warning_msg.lower() or "connection" in warning_msg.lower() or "retries" in warning_msg.lower() or "timed out" in warning_msg.lower():
+#         short_msg = "공공데이터 센터 통신 지연으로 인해 안정성을 위해 준비된 대구시 안전 쉼터 로컬 데이터(1,127곳)로 즉시 대체 구동합니다. (정상 작동)"
+#     else:
+#         short_msg = warning_msg
+#     st.warning(f"ℹ️ {short_msg}")
+# if artifacts.metadata.get("weather_warning"):
+#     warning_msg = artifacts.metadata['weather_warning']
+#     if "time out" in warning_msg.lower() or "connection" in warning_msg.lower() or "retries" in warning_msg.lower() or "timed out" in warning_msg.lower():
+#         short_msg = "기상청 서버 통신 지연으로 인해 대구지역 기상 관측 참고 스냅샷 데이터(27.2°C, 습도 51%)로 즉시 대체 구동합니다. (정상 작동)"
+#     else:
+#         short_msg = warning_msg
+#     st.info(f"ℹ️ {short_msg}")
 
 hottest_day = None
 hottest_warning = None
