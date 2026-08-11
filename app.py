@@ -218,6 +218,33 @@ for feature in overview_geojson.get("features", []):
 
 overview_map_column, overview_info_column = st.columns([2.2, 1])
 with overview_map_column:
+    # 쉼터 포인트 레이어 준비
+    shelters_gdf = artifacts.citywide_shelters.copy()
+    if shelters_gdf.crs != "EPSG:4326":
+        shelters_gdf = shelters_gdf.to_crs("EPSG:4326")
+    
+    shelters_gdf["lon"] = shelters_gdf.geometry.x
+    shelters_gdf["lat"] = shelters_gdf.geometry.y
+    
+    # 툴팁 필드 일치 (행정동 툴팁과 key 통일)
+    shelters_gdf["region"] = shelters_gdf["name"]
+    shelters_gdf["adm_cd"] = shelters_gdf["address"]
+    shelters_gdf["analysis_status"] = "무더위쉼터 (공공 API)"
+    shelters_gdf["map_metric_label"] = "수용인원:"
+    shelters_gdf["map_score_display"] = shelters_gdf["capacity"].astype(int).astype(str) + "명"
+    shelters_gdf["shelter_display"] = ""
+    
+    shelter_layer = pdk.Layer(
+        "ScatterplotLayer",
+        id="daegu-shelter-locations",
+        data=shelters_gdf,
+        get_position=["lon", "lat"],
+        get_color=[234, 88, 12, 190],  # 오렌지색
+        get_radius=150,
+        pickable=True,
+        auto_highlight=True,
+    )
+
     overview_layer = pdk.Layer(
         "GeoJsonLayer",
         id="daegu-administrative-boundaries",
@@ -236,7 +263,7 @@ with overview_map_column:
         pdk.Deck(
             map_style=None,
             initial_view_state=pdk.ViewState(latitude=35.87, longitude=128.60, zoom=10.55),
-            layers=[overview_layer],
+            layers=[overview_layer, shelter_layer],
             tooltip={
                 "html": (
                     "<b>{region}</b><br/>행정동 코드 {adm_cd}<br/>"
