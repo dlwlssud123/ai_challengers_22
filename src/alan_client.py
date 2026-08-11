@@ -148,6 +148,7 @@ class AlanPolicyClient:
                 
                 if isinstance(payload, dict):
                     text_val = (
+                        payload.get("answer") or
                         payload.get("content") or 
                         payload.get("response") or 
                         payload.get("message") or 
