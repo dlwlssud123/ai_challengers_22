@@ -1,8 +1,11 @@
 .streamlit/secrets.toml
 .env
 .venv/
+.venv-rebuilt/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .coverage
 tmp/
+data/cache/
+data/processed/
