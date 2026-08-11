@@ -77,24 +77,59 @@ class AlanPolicyClient:
             f"입력 사실:\n{json.dumps(facts, ensure_ascii=False)}\n출력 JSON 스키마:\n{json.dumps(schema, ensure_ascii=False)}"
         )
 
-    def _build_request_payload(self, prompt: str) -> dict:
-        # TODO: Alan 공식 API 문서에서 요청 필드가 확인되면 이 메서드만 구현한다.
-        raise AlanClientError("Alan 공식 요청 명세가 확인되지 않아 Mock 정책을 사용합니다.")
-
-    def _post_json(self, payload: dict) -> Any:
-        if not self.is_configured:
-            raise AlanClientError("Alan API 키 또는 공식 엔드포인트가 설정되지 않았습니다.")
+    def _parse_json_from_text(self, text: str) -> dict:
+        cleaned = text.strip()
+        if "```json" in cleaned:
+            cleaned = cleaned.split("```json")[1].split("```")[0].strip()
+        elif "```" in cleaned:
+            cleaned = cleaned.split("```")[1].split("```")[0].strip()
+            
         try:
-            response = requests.post(self.endpoint, json=payload, headers={"Authorization": f"Bearer {self.api_key}"}, timeout=self.timeout)
-            response.raise_for_status()
-        except requests.Timeout as exc:
-            raise AlanClientError("Alan API 응답 시간이 초과되었습니다.") from exc
-        except requests.RequestException as exc:
-            raise AlanClientError("Alan API 호출에 실패했습니다.") from exc
-        try:
-            return response.json()
+            return json.loads(cleaned)
         except ValueError as exc:
-            raise AlanClientError("Alan API 응답을 JSON으로 해석할 수 없습니다.") from exc
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end != -1:
+                try:
+                    return json.loads(cleaned[start:end+1])
+                except ValueError:
+                    pass
+            raise AlanClientError("Alan API 응답에서 유효한 JSON을 파싱하지 못했습니다.") from exc
+
+    def _call_alan_api(self, prompt: str) -> str:
+        keys = [
+            self.api_key,
+            os.getenv("ALAN_API_KEY_2") or _read_streamlit_secret("ALAN_API_KEY_2"),
+            os.getenv("ALAN_API_KEY_3") or _read_streamlit_secret("ALAN_API_KEY_3"),
+            os.getenv("ALAN_API_KEY_4") or _read_streamlit_secret("ALAN_API_KEY_4"),
+            os.getenv("ALAN_API_KEY_5") or _read_streamlit_secret("ALAN_API_KEY_5"),
+        ]
+        keys = [k for k in keys if k]
+        if not keys:
+            raise AlanClientError("Alan API 키가 설정되지 않았습니다.")
+            
+        last_err = None
+        for key in keys:
+            try:
+                params = {
+                    "content": prompt,
+                    "client_id": key
+                }
+                response = requests.get(self.endpoint, params=params, timeout=self.timeout)
+                response.raise_for_status()
+                payload = response.json()
+                
+                if isinstance(payload, dict) and "content" in payload:
+                    return str(payload["content"])
+                elif isinstance(payload, str):
+                    return payload
+                else:
+                    raise AlanClientError("Alan API 응답 구조를 파싱할 수 없습니다.")
+            except Exception as exc:
+                last_err = exc
+                continue
+                
+        raise AlanClientError(f"모든 Alan API 키 호출에 실패했습니다. 최종 오류: {last_err}")
 
     def recommend_policy(self, analysis_result: dict) -> dict:
         allowed = {item["name"] for item in analysis_result["optimization"]["recommended_locations"]}
@@ -102,8 +137,12 @@ class AlanPolicyClient:
             if not self.is_configured:
                 raise AlanClientError("Alan API 설정이 없어 Mock 정책을 사용합니다.")
             prompt = self.build_prompt(analysis_result)
-            self.last_raw_response = self._post_json(self._build_request_payload(prompt))
-            return validate_policy_response(self.last_raw_response, allowed)
+            
+            response_text = self._call_alan_api(prompt)
+            parsed_json = self._parse_json_from_text(response_text)
+            self.last_raw_response = parsed_json
+            
+            return validate_policy_response(parsed_json, allowed)
         except AlanClientError as exc:
             self.last_warning = str(exc)
             return validate_policy_response(mock_policy(analysis_result), allowed)
