@@ -112,7 +112,7 @@ with st.sidebar:
     st.header("히트맵 기준")
     heatmap_label = st.radio(
         "표시 지수",
-        ["극한폭염 정책 우선순위", "사회·건강 취약도", "쉼터 수 부족도"],
+        ["극한폭염 정책 우선순위", "사회·건강 취약도", "쉼터 수 부족도", "쉼터 300m 커버 범위"],
         index=0,
     )
     st.header("시설 설치 시뮬레이션")
@@ -132,6 +132,7 @@ heatmap_metric = {
     "극한폭염 정책 우선순위": "policy",
     "사회·건강 취약도": "vulnerability",
     "쉼터 수 부족도": "shelter_gap",
+    "쉼터 300m 커버 범위": "shelter_coverage",
 }[heatmap_label]
 
 try:
@@ -218,31 +219,36 @@ for feature in overview_geojson.get("features", []):
 
 overview_map_column, overview_info_column = st.columns([2.2, 1])
 with overview_map_column:
-    # 쉼터 포인트 레이어 준비 (GeoJsonLayer 활용)
+    # 쉼터 데이터를 순수 pandas DataFrame으로 변환 (geometry 직렬화 에러 방지)
     shelters_gdf = artifacts.citywide_shelters.copy()
     if shelters_gdf.crs != "EPSG:4326":
         shelters_gdf = shelters_gdf.to_crs("EPSG:4326")
     
-    # 툴팁 필드 일치 (행정동 툴팁과 key 통일)
-    shelters_gdf["region"] = shelters_gdf["name"]
-    shelters_gdf["adm_cd"] = shelters_gdf["address"]
-    shelters_gdf["analysis_status"] = "무더위쉼터 (공공 API)"
-    shelters_gdf["map_metric_label"] = "수용인원:"
-    shelters_gdf["map_score_display"] = shelters_gdf["capacity"].astype(int).astype(str) + "명"
-    shelters_gdf["shelter_display"] = ""
+    shelters_df = pd.DataFrame(shelters_gdf)
+    shelters_df["lon"] = shelters_gdf.geometry.x
+    shelters_df["lat"] = shelters_gdf.geometry.y
+    if "geometry" in shelters_df.columns:
+        shelters_df = shelters_df.drop(columns="geometry")
     
+    # 툴팁 필드 일치 (행정동 툴팁과 key 통일)
+    shelters_df["region"] = shelters_df["name"]
+    shelters_df["adm_cd"] = shelters_df["address"]
+    shelters_df["analysis_status"] = "무더위쉼터 (공공 API)"
+    shelters_df["map_metric_label"] = "수용인원:"
+    shelters_df["map_score_display"] = shelters_df["capacity"].astype(int).astype(str) + "명"
+    shelters_df["shelter_display"] = ""
+    
+    # 1. 무더위 쉼터 위치 포인트 레이어 (순수 DataFrame 기반)
     shelter_layer = pdk.Layer(
-        "GeoJsonLayer",
+        "ScatterplotLayer",
         id="daegu-shelter-locations",
-        data=shelters_gdf,
+        data=shelters_df,
+        get_position=["lon", "lat"],
+        get_color=[234, 88, 12, 230],  # 오렌지색
+        get_radius=80,
+        radius_min_pixels=4,           # 줌아웃 시 최소 4px 크기 유지
+        radius_max_pixels=12,
         pickable=True,
-        point_type="circle",
-        get_point_radius=100,
-        point_radius_min_pixels=3,
-        point_radius_max_pixels=12,
-        get_fill_color=[234, 88, 12, 230],  # 오렌지색
-        get_line_color=[255, 255, 255, 180],
-        get_line_width=1,
         auto_highlight=True,
     )
 
@@ -260,11 +266,30 @@ with overview_map_column:
         get_line_width="properties.line_width",
         line_width_min_pixels=1,
     )
+    
+    # 2. 쉼터 300m 커버 버퍼 레이어 (표시 지수에서 '쉼터 300m 커버 범위' 선택 시에만 렌더링)
+    layers = [overview_layer, shelter_layer]
+    if heatmap_metric == "shelter_coverage":
+        buffer_layer = pdk.Layer(
+            "ScatterplotLayer",
+            id="daegu-shelter-buffers",
+            data=shelters_df,
+            get_position=["lon", "lat"],
+            get_radius=300,                     # 반경 300m 버퍼
+            get_fill_color=[34, 197, 94, 60],   # 연한 연두색 반투명
+            get_line_color=[34, 197, 94, 180],  # 연두색 선
+            stroked=True,
+            filled=True,
+            pickable=False,                     # 툴팁 방해 방지
+        )
+        # 레이어 겹침 우선순위: 배경 행정동 -> 300m 버퍼 원 -> 쉼터 점 마커
+        layers = [overview_layer, buffer_layer, shelter_layer]
+
     overview_event = st.pydeck_chart(
         pdk.Deck(
             map_style=None,
             initial_view_state=pdk.ViewState(latitude=35.87, longitude=128.60, zoom=10.55),
-            layers=[overview_layer, shelter_layer],
+            layers=layers,
             tooltip={
                 "html": (
                     "<b>{region}</b><br/>행정동 코드 {adm_cd}<br/>"
@@ -309,6 +334,7 @@ with overview_info_column:
             col2.metric("500m 커버율", overview_properties.get("coverage_ratio_display", "-"))
 
             st.metric("사회·건강 취약도", overview_properties.get("vulnerability_display", "-"))
+            st.metric("행정동 고령인구", overview_properties.get("elderly_display", "데이터 연결 필요"))
             st.metric("등급", overview_properties.get("district_grade", "-"))
             st.metric("행정동 공공 API 쉼터", overview_properties.get("shelter_display", "데이터 연결 필요"))
             if not overview_properties.get("shelter_count_available"):
@@ -316,7 +342,7 @@ with overview_info_column:
             st.caption(
                 f"고령인구 비율 {overview_properties.get('elderly_ratio', 0):.1f}% · "
                 f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
-                "취약도는 구·군 단위로 동일하지만 최단 거리와 커버율은 행정동 지오메트리 실시간 분석값입니다."
+                "취약도는 구·군 단위로 동일하지만 고령인구, 최단 거리, 커버율은 행정동별 실시간 연산값입니다."
             )
         else:
             st.info("현재는 행정경계 정보만 연결된 지역입니다.")

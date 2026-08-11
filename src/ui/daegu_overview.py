@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 from typing import Any
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 from shapely.geometry import shape
 from src.analysis.accessibility import calculate_accessibility
+
+
+POPULATION_CSV = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "data",
+    "raw",
+    "daegu_dong_population_202607.csv"
+)
 
 
 def normalize_administrative_name(value: Any) -> str:
@@ -20,6 +30,26 @@ def normalize_administrative_name(value: Any) -> str:
         .replace(".", "")
         .replace("・", "")
     )
+
+
+def _load_population_lookup() -> dict[str, dict]:
+    lookup = {}
+    if not os.path.exists(POPULATION_CSV):
+        return lookup
+    try:
+        df = pd.read_csv(POPULATION_CSV, encoding="utf-8")
+        for row in df.itertuples():
+            district = str(row.district_name).strip()
+            dong = str(row.adm_name).strip()
+            key = normalize_administrative_name(district + dong)
+            lookup[key] = {
+                "population": int(row.population),
+                "elderly_population": int(row.elderly_population_60_plus),
+                "elderly_ratio": float(row.elderly_ratio_60_plus) * 100
+            }
+    except Exception:
+        pass
+    return lookup
 
 
 def _score_color(score: float) -> list[int]:
@@ -87,6 +117,7 @@ def merge_daegu_boundaries(
     """Return a selectable citywide layer with dong- or district-level analysis."""
 
     lookup = _analysis_lookup(areas) if include_dong_detail else {}
+    pop_lookup = _load_population_lookup()
     district_lookup = {
         normalize_administrative_name(row.get("region_name")): row
         for row in (team_vulnerability or [])
@@ -137,6 +168,14 @@ def merge_daegu_boundaries(
             or "행정동명 없음"
         )
         normalized_api_name = normalize_administrative_name(api_name)
+        
+        # 고령인구 룩업 매치
+        pop_match = None
+        for key, val in pop_lookup.items():
+            if key in normalized_api_name or normalized_api_name in key:
+                pop_match = val
+                break
+
         match = next(
             (
                 values
@@ -164,6 +203,12 @@ def merge_daegu_boundaries(
         distance_val = acc_data["nearest_shelter_distance"]
         distance_str = f"{distance_val:.0f}m" if not np.isnan(distance_val) else "쉼터 없음"
 
+        # 인구 정보 포맷팅
+        pop_val = pop_match["population"] if pop_match else None
+        elderly_val = pop_match["elderly_population"] if pop_match else None
+        elderly_ratio_val = pop_match["elderly_ratio"] if pop_match else 0.0
+        elderly_display_str = f"{elderly_val:,}명 ({elderly_ratio_val:.1f}%)" if elderly_val is not None else "데이터 연결 필요"
+
         if match:
             score = match["priority_score"]
             properties = {
@@ -174,8 +219,8 @@ def merge_daegu_boundaries(
                 "analysis_status": "수성구 상세 분석 연결",
                 "priority_score": score,
                 "priority_display": f"{score:.1f}점",
-                "elderly_population": match["elderly_population"],
-                "elderly_display": f"{match['elderly_population']:,}명",
+                "elderly_population": elderly_val or match["elderly_population"],
+                "elderly_display": elderly_display_str if elderly_val is not None else f"{match['elderly_population']:,}명",
                 "heat_score": match["heat_score"],
                 "vulnerability_score": match["vulnerability_score"],
                 "access_score": match["access_score"],
@@ -206,13 +251,13 @@ def merge_daegu_boundaries(
                 "priority_display": f"{score:.1f}점",
                 "district_grade": str(district.get("grade") or "-"),
                 "district_cluster": int(district.get("cluster") or 0),
-                "elderly_ratio": float(district.get("elderly_ratio") or 0),
+                "elderly_ratio": elderly_ratio_val if elderly_ratio_val > 0.0 else float(district.get("elderly_ratio") or 0),
                 "heat_illness_count": float(district.get("heat_illness_count") or 0),
                 "shelter_count": shelter_count,
                 "shelter_count_available": shelter_counts_available and shelter_count is not None,
                 "shelter_display": f"{shelter_count:,}곳" if shelter_count is not None else "데이터 연결 필요",
-                "elderly_population": None,
-                "elderly_display": "구·군 결과 참조",
+                "elderly_population": elderly_val,
+                "elderly_display": elderly_display_str,
                 "heat_score": None,
                 "vulnerability_score": vulnerability_score,
                 "vulnerability_display": f"{vulnerability_score:.1f}점",
@@ -233,8 +278,8 @@ def merge_daegu_boundaries(
                 "analysis_status": "행정경계만 연결 · 분석 데이터 준비 중",
                 "priority_score": None,
                 "priority_display": "분석 전",
-                "elderly_population": None,
-                "elderly_display": "데이터 미연결",
+                "elderly_population": elderly_val,
+                "elderly_display": elderly_display_str,
                 "heat_score": None,
                 "vulnerability_score": None,
                 "access_score": None,
@@ -257,6 +302,7 @@ def merge_daegu_boundaries(
         if heatmap_metric == "vulnerability":
             map_score = properties.get("vulnerability_score")
             label = "사회·건강 취약도"
+            properties["fill_color"] = _score_color(float(map_score)) if map_score is not None else [100, 116, 139, 55]
         elif heatmap_metric == "shelter_gap":
             count = properties.get("shelter_count")
             if count is None:
@@ -266,11 +312,17 @@ def merge_daegu_boundaries(
             else:
                 map_score = 100.0 * (maximum_count - int(count)) / (maximum_count - minimum_count)
             label = "쉼터 수 부족도"
+            properties["fill_color"] = _score_color(float(map_score)) if map_score is not None else [100, 116, 139, 55]
+        elif heatmap_metric == "shelter_coverage":
+            map_score = 0.0
+            label = "쉼터 300m 커버 범위"
+            properties["fill_color"] = [163, 163, 163, 45]  # 연한 중성 회색 반투명 배경
         else:
             map_score = properties.get("priority_score")
             label = "극한폭염 정책 우선순위"
+            properties["fill_color"] = _score_color(float(map_score)) if map_score is not None else [100, 116, 139, 55]
+            
         properties["map_metric_label"] = label
         properties["map_score"] = float(map_score) if map_score is not None else None
-        properties["map_score_display"] = f"{float(map_score):.1f}점" if map_score is not None else "데이터 없음"
-        properties["fill_color"] = _score_color(float(map_score)) if map_score is not None else [100, 116, 139, 55]
+        properties["map_score_display"] = f"{float(map_score):.1f}점" if map_score is not None and heatmap_metric != "shelter_coverage" else "배경"
     return result
