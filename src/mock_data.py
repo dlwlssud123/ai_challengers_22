@@ -70,6 +70,50 @@ def available_regions() -> list[str]:
     return list(REGIONS)
 
 
+def region_heatmap_geojson(selected_region: str | None = None) -> dict:
+    """시연용 행정동 경계를 반환한다. 실제 경계 GeoJSON으로 교체해야 한다."""
+    features = []
+    for index, (region, data) in enumerate(REGIONS.items()):
+        latitude = data["center"]["latitude"]
+        longitude = data["center"]["longitude"]
+        # 서로 겹치지 않는 간이 폴리곤이다. 실제 행정동 경계가 아니다.
+        longitude_radius = 0.012 if index != 1 else 0.010
+        latitude_radius = 0.009 if index != 2 else 0.008
+        score = data["vulnerability_score"]
+        if region == selected_region:
+            fill_color = [249, 115, 22, 235]
+            line_color = [255, 255, 255, 255]
+        elif score >= 85:
+            fill_color = [220, 38, 38, 190]
+            line_color = [127, 29, 29, 255]
+        elif score >= 70:
+            fill_color = [249, 115, 22, 180]
+            line_color = [154, 52, 18, 255]
+        else:
+            fill_color = [250, 204, 21, 165]
+            line_color = [161, 98, 7, 255]
+        coordinates = [[
+            [longitude - longitude_radius, latitude - latitude_radius],
+            [longitude + longitude_radius, latitude - latitude_radius],
+            [longitude + longitude_radius, latitude + latitude_radius],
+            [longitude - longitude_radius, latitude + latitude_radius],
+            [longitude - longitude_radius, latitude - latitude_radius],
+        ]]
+        features.append({
+            "type": "Feature",
+            "properties": {
+                "region": region,
+                "vulnerability_score": score,
+                "vulnerability_grade": data["vulnerability_grade"],
+                "vulnerable_population": data["vulnerable_population"],
+                "fill_color": fill_color,
+                "line_color": line_color,
+            },
+            "geometry": {"type": "Polygon", "coordinates": coordinates},
+        })
+    return {"type": "FeatureCollection", "features": features}
+
+
 def _region(region: str) -> dict:
     if region not in REGIONS:
         raise ValueError(f"지원하지 않는 지역입니다: {region}")
@@ -127,4 +171,3 @@ def mock_policy(analysis_result: dict) -> dict:
         "recommended_policies": policies,
         "limitations": ["현재 결과는 해커톤 시연용 Mock 데이터와 단순 비용 효율 휴리스틱을 사용했습니다.", "실제 집행 전 최신 인구·시설 데이터와 현장 설치 가능 여부를 확인해야 합니다."],
     }
-

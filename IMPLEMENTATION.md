@@ -7,9 +7,11 @@
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-streamlit run app.py
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
 ```
+
+`pip`와 `streamlit` 명령만 직접 실행하면 서로 다른 Python 환경을 가리킬 수 있습니다. 반드시 같은 환경의 `python -m pip`와 `python -m streamlit`을 사용하세요.
 
 왼쪽 패널에서 지역, 예산, 시설 수를 선택하고 `정책 분석 실행`을 누릅니다. 기본 Mock 모드는 API 키와 모델 파일 없이 동작합니다. 테스트는 `pytest -q`로 실행합니다.
 
@@ -36,9 +38,8 @@ streamlit run app.py
 
 ## TODO와 한계
 
-- 행정동별 공공데이터, GeoJSON, 학습 모델은 아직 연결되지 않았습니다.
-- 지도는 시연 후보 좌표의 점 표시이며, 행정동 경계 Heat Map은 실제 GeoJSON 연결 후 추가합니다.
+- SGIS 2025 행정동 경계 API가 연결되어 대구 150개 행정동의 실제 경계를 표시합니다. API 장애 시에만 간이 Mock 경계로 대체합니다.
+- 취약도 색상과 상세 분석값은 아직 3개 행정동의 Mock 데이터이며 공공데이터·학습 모델 연결이 필요합니다.
 - 입지 선택은 보호인구/비용 비율 휴리스틱이며 담당자의 최적화 모델로 교체할 수 있습니다.
 - Alan 공식 명세 확인 후 요청 payload와 실제 응답 콘텐츠 추출 규칙을 구현해야 합니다.
 - Mock 수치와 기대효과는 집행 근거가 아니며 최신 데이터와 현장 검증이 필요합니다.
-

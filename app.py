@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
 from src.integration import run_policy_analysis
-from src.mock_data import available_regions
+from src.mock_data import region_heatmap_geojson
+from src.sgis_client import SGISClientError, load_daegu_heatmap_geojson
+
+
+@st.cache_data(ttl=21_600, show_spinner=False)
+def load_region_map() -> tuple[dict, str, str | None]:
+    try:
+        return load_daegu_heatmap_geojson(), "SGIS 2025 행정동 경계", None
+    except (SGISClientError, ValueError) as exc:
+        return region_heatmap_geojson(), "Mock 간이 경계", str(exc)
 
 
 st.set_page_config(page_title="폭염 정책 나침반", page_icon="☀️", layout="wide")
@@ -66,9 +77,102 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 st.markdown('<section class="hero"><h1>폭염 정책 나침반</h1><p>취약지역과 대응시설 사각지대를 찾아, 예산 안에서 우선 정책을 제안합니다.</p></section>', unsafe_allow_html=True)
 
+st.subheader("폭염 취약도 지도")
+st.caption("색이 진할수록 취약도가 높습니다. 분석할 행정동 영역을 지도에서 직접 선택하세요.")
+selected_region = st.session_state.get("selected_region")
+heatmap_data, boundary_source, boundary_warning = load_region_map()
+heatmap_data = deepcopy(heatmap_data)
+for feature in heatmap_data.get("features", []):
+    properties = feature.get("properties", {})
+    if properties.get("region") == selected_region:
+        properties["fill_color"] = [249, 115, 22, 245]
+        properties["line_color"] = [255, 255, 255, 255]
+
+all_boundaries = {
+    "type": "FeatureCollection",
+    "features": heatmap_data.get("features", []),
+}
+analyzed_boundaries = {
+    "type": "FeatureCollection",
+    "features": [
+        feature
+        for feature in heatmap_data.get("features", [])
+        if feature.get("properties", {}).get("has_analysis", True)
+    ],
+}
+boundary_layer = pdk.Layer(
+    "GeoJsonLayer",
+    id="region-boundaries",
+    data=all_boundaries,
+    pickable=False,
+    filled=True,
+    stroked=True,
+    opacity=0.38,
+    get_fill_color="properties.fill_color",
+    get_line_color="properties.line_color",
+    line_width_min_pixels=1,
+)
+region_layer = pdk.Layer(
+    "GeoJsonLayer",
+    id="region-heatmap",
+    data=analyzed_boundaries,
+    pickable=True,
+    auto_highlight=True,
+    filled=True,
+    stroked=True,
+    opacity=0.82,
+    get_fill_color="properties.fill_color",
+    get_line_color="properties.line_color",
+    get_line_width=selected_region and 5 or 2,
+    line_width_min_pixels=2,
+)
+region_event = st.pydeck_chart(
+    pdk.Deck(
+        map_style=None,
+        initial_view_state=pdk.ViewState(latitude=35.87, longitude=128.60, zoom=10.7),
+        layers=[boundary_layer, region_layer],
+        tooltip={
+            "html": "<b>{region}</b><br/>취약도 {vulnerability_score}점 · {vulnerability_grade}<br/>취약인구 {vulnerable_population}명",
+            "style": {"backgroundColor": "#292524", "color": "white"},
+        },
+    ),
+    height=430,
+    width="stretch",
+    on_select="rerun",
+    selection_mode="single-object",
+    key="region_heatmap",
+)
+
+st.caption(f"경계 데이터: {boundary_source}")
+if boundary_warning:
+    st.warning(f"SGIS 경계를 불러오지 못해 Mock 경계를 표시합니다: {boundary_warning}")
+
+selected_objects = region_event.selection.get("objects", {}).get("region-heatmap", [])
+if selected_objects:
+    selected_object = selected_objects[0]
+    properties = selected_object.get("properties", selected_object)
+    clicked_region = properties.get("region")
+    if clicked_region and clicked_region != selected_region:
+        st.session_state["selected_region"] = clicked_region
+        st.session_state.pop("analysis_result", None)
+        selected_region = clicked_region
+
+st.markdown(
+    '<div style="display:flex;gap:1rem;flex-wrap:wrap;margin:-.3rem 0 1rem">'
+    '<span>🟥 위험 (85점 이상)</span><span>🟧 주의 (70점 이상)</span><span>🟨 관심</span></div>',
+    unsafe_allow_html=True,
+)
+
+if not selected_region:
+    st.info("지도에서 행정동을 클릭하면 취약도 상세 정보와 정책 분석 조건이 열립니다.")
+    st.stop()
+
+region = selected_region
+st.success(f"선택 지역: **{region}**")
+
 with st.sidebar:
     st.header("분석 조건")
-    region = st.selectbox("대상 행정동", available_regions())
+    st.markdown(f"**선택 지역**  \n{region}")
     budget_million = st.number_input("가용 예산 (백만원)", min_value=0, max_value=500, value=50, step=1)
     max_facilities = st.number_input("설치 가능 시설 수", min_value=0, max_value=10, value=2, step=1)
     use_mock = st.toggle("Mock 모드", value=True, help="모델과 API 없이 시연용 데이터로 실행합니다.")
