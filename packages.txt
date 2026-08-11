@@ -1,0 +1,5 @@
+﻿libgdal-dev
+libproj-dev
+binutils
+g++
+proj-bin
