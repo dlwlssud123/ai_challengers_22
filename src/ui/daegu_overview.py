@@ -6,7 +6,9 @@ from copy import deepcopy
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 from shapely.geometry import shape
+from src.analysis.accessibility import calculate_accessibility
 
 
 def normalize_administrative_name(value: Any) -> str:
@@ -101,6 +103,31 @@ def merge_daegu_boundaries(
     shelter_counts_available = dong_shelter_counts is not None
     dong_shelter_counts = dong_shelter_counts or {}
 
+    # 대구 전역 실시간 쉼터 접근성 지리 연산
+    access_lookup = {}
+    if result and citywide_shelters is not None and not citywide_shelters.empty:
+        try:
+            features = result.get("features", [])
+            gdf_boundaries = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+            
+            # 가상 인구 주입으로 calculate_accessibility 실행 가능화
+            gdf_boundaries["elderly_population"] = 1.0
+            gdf_boundaries["population"] = 1.0
+            
+            gdf_access = calculate_accessibility(
+                gdf_boundaries,
+                citywide_shelters,
+                radius_m=500.0, # 기본 대피 반경 500m
+                analysis_crs="EPSG:5179"
+            )
+            for row in gdf_access.itertuples():
+                access_lookup[str(row.adm_cd)] = {
+                    "coverage_ratio": float(row.coverage_ratio),
+                    "nearest_shelter_distance": float(row.nearest_shelter_distance),
+                }
+        except Exception:
+            pass
+
     for feature in result.get("features", []):
         original = feature.get("properties") or {}
         api_name = str(
@@ -130,6 +157,13 @@ def merge_daegu_boundaries(
             None,
         )
         adm_cd = str(original.get("adm_cd") or (match or {}).get("adm_cd") or "-")
+        
+        # 접근성 지표 추출
+        acc_data = access_lookup.get(adm_cd, {"coverage_ratio": 0.0, "nearest_shelter_distance": float("nan")})
+        coverage_pct = acc_data["coverage_ratio"] * 100
+        distance_val = acc_data["nearest_shelter_distance"]
+        distance_str = f"{distance_val:.0f}m" if not np.isnan(distance_val) else "쉼터 없음"
+
         if match:
             score = match["priority_score"]
             properties = {
@@ -147,6 +181,8 @@ def merge_daegu_boundaries(
                 "access_score": match["access_score"],
                 "fill_color": _score_color(score),
                 "line_color": [255, 255, 255, 220],
+                "coverage_ratio_display": f"{coverage_pct:.1f}%",
+                "nearest_shelter_distance_display": distance_str,
             }
         elif district_match:
             district_name, district = district_match
@@ -184,6 +220,8 @@ def merge_daegu_boundaries(
                 "access_score": None,
                 "fill_color": _score_color(score),
                 "line_color": [255, 255, 255, 180],
+                "coverage_ratio_display": f"{coverage_pct:.1f}%",
+                "nearest_shelter_distance_display": distance_str,
             }
         else:
             properties = {
@@ -202,6 +240,8 @@ def merge_daegu_boundaries(
                 "access_score": None,
                 "fill_color": [100, 116, 139, 55],
                 "line_color": [100, 116, 139, 170],
+                "coverage_ratio_display": f"{coverage_pct:.1f}%",
+                "nearest_shelter_distance_display": distance_str,
             }
         feature["properties"] = properties
 

@@ -218,13 +218,10 @@ for feature in overview_geojson.get("features", []):
 
 overview_map_column, overview_info_column = st.columns([2.2, 1])
 with overview_map_column:
-    # 쉼터 포인트 레이어 준비
+    # 쉼터 포인트 레이어 준비 (GeoJsonLayer 활용)
     shelters_gdf = artifacts.citywide_shelters.copy()
     if shelters_gdf.crs != "EPSG:4326":
         shelters_gdf = shelters_gdf.to_crs("EPSG:4326")
-    
-    shelters_gdf["lon"] = shelters_gdf.geometry.x
-    shelters_gdf["lat"] = shelters_gdf.geometry.y
     
     # 툴팁 필드 일치 (행정동 툴팁과 key 통일)
     shelters_gdf["region"] = shelters_gdf["name"]
@@ -235,13 +232,17 @@ with overview_map_column:
     shelters_gdf["shelter_display"] = ""
     
     shelter_layer = pdk.Layer(
-        "ScatterplotLayer",
+        "GeoJsonLayer",
         id="daegu-shelter-locations",
         data=shelters_gdf,
-        get_position=["lon", "lat"],
-        get_color=[234, 88, 12, 190],  # 오렌지색
-        get_radius=150,
         pickable=True,
+        point_type="circle",
+        get_point_radius=100,
+        point_radius_min_pixels=3,
+        point_radius_max_pixels=12,
+        get_fill_color=[234, 88, 12, 230],  # 오렌지색
+        get_line_color=[255, 255, 255, 180],
+        get_line_width=1,
         auto_highlight=True,
     )
 
@@ -267,7 +268,10 @@ with overview_map_column:
             tooltip={
                 "html": (
                     "<b>{region}</b><br/>행정동 코드 {adm_cd}<br/>"
-                    "{analysis_status}<br/>{map_metric_label} {map_score_display}<br/>"
+                    "{analysis_status}<br/>"
+                    "<b>최단 쉼터 거리:</b> {nearest_shelter_distance_display}<br/>"
+                    "<b>쉼터 500m 커버율:</b> {coverage_ratio_display}<br/>"
+                    "{map_metric_label} {map_score_display}<br/>"
                     "행정동 쉼터 {shelter_display}"
                 ),
                 "style": {"backgroundColor": "#292524", "color": "white"},
@@ -298,6 +302,12 @@ with overview_info_column:
         if overview_properties.get("has_district_analysis"):
             st.success(overview_properties["analysis_status"])
             st.metric("극한폭염 정책 우선순위", overview_properties["priority_display"])
+            
+            # 실시간 지리 접근성 분석 지표 메트릭 추가
+            col1, col2 = st.columns(2)
+            col1.metric("최단 쉼터 거리", overview_properties.get("nearest_shelter_distance_display", "-"))
+            col2.metric("500m 커버율", overview_properties.get("coverage_ratio_display", "-"))
+
             st.metric("사회·건강 취약도", overview_properties.get("vulnerability_display", "-"))
             st.metric("등급", overview_properties.get("district_grade", "-"))
             st.metric("행정동 공공 API 쉼터", overview_properties.get("shelter_display", "데이터 연결 필요"))
@@ -306,7 +316,7 @@ with overview_info_column:
             st.caption(
                 f"고령인구 비율 {overview_properties.get('elderly_ratio', 0):.1f}% · "
                 f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
-                "취약도는 구·군 단위로 동일하지만 쉼터 수는 선택한 행정동 경계 기준입니다."
+                "취약도는 구·군 단위로 동일하지만 최단 거리와 커버율은 행정동 지오메트리 실시간 분석값입니다."
             )
         else:
             st.info("현재는 행정경계 정보만 연결된 지역입니다.")
