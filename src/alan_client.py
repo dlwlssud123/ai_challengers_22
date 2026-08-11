@@ -5,7 +5,11 @@ import json
 import os
 from typing import Any
 import requests
+import urllib3
 from .mock_data import mock_policy
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 
 class AlanClientError(RuntimeError):
@@ -113,14 +117,24 @@ class AlanPolicyClient:
             try:
                 params = {
                     "content": prompt,
+                    "question": prompt,
                     "client_id": key
                 }
-                response = requests.get(self.endpoint, params=params, timeout=self.timeout)
+                response = requests.get(self.endpoint, params=params, timeout=self.timeout, verify=False)
                 response.raise_for_status()
                 payload = response.json()
                 
-                if isinstance(payload, dict) and "content" in payload:
-                    return str(payload["content"])
+                if isinstance(payload, dict):
+                    text_val = (
+                        payload.get("content") or 
+                        payload.get("response") or 
+                        payload.get("message") or 
+                        payload.get("result")
+                    )
+                    if text_val:
+                        return str(text_val)
+                    else:
+                        return json.dumps(payload, ensure_ascii=False)
                 elif isinstance(payload, str):
                     return payload
                 else:

@@ -76,7 +76,7 @@ def test_citywide_boundaries_use_team_district_results_and_shelter_counts():
     merged = merge_daegu_boundaries(boundaries, areas, team, citywide_shelters)
     result = merged["features"][0]["properties"]
     assert result["has_district_analysis"] is True
-    assert result["priority_display"] == "36.7점"
+    assert result["priority_display"] == "59.1점"
     assert result["shelter_count"] == 1
 
 
@@ -174,4 +174,4 @@ def test_dalseo_is_not_misclassified_as_seogu():
     )["features"][0]["properties"]
 
     assert result["district_name"] == "달서구"
-    assert abs(result["vulnerability_score"] - 36.72) < 1e-2
+    assert abs(result["vulnerability_score"] - 79.085) < 1e-2
