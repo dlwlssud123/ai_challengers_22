@@ -1,7 +1,8 @@
 """외부 데이터와 모델 없이도 전체 시연을 가능하게 하는 고정 데이터."""
 
 from __future__ import annotations
-
+import os
+import pandas as pd
 from copy import deepcopy
 
 
@@ -115,9 +116,30 @@ def region_heatmap_geojson(selected_region: str | None = None) -> dict:
 
 
 def _region(region: str) -> dict:
-    if region not in REGIONS:
-        raise ValueError(f"지원하지 않는 지역입니다: {region}")
-    return deepcopy(REGIONS[region])
+    if region in REGIONS:
+        return deepcopy(REGIONS[region])
+        
+    districts = ["수성구", "달서구", "동구", "서구", "남구", "북구", "중구", "달성군", "군위군"]
+    for dist in districts:
+        if dist in region:
+            return deepcopy(REGIONS[dist])
+            
+    normalized_region = region.replace(" ", "")
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    csv_path = os.path.join(base_dir, "data", "raw", "daegu_dong_population_202607.csv")
+    if os.path.exists(csv_path):
+        try:
+            df = pd.read_csv(csv_path, encoding="utf-8")
+            for row in df.itertuples():
+                dong = str(row.adm_name).strip()
+                if dong in normalized_region or normalized_region in dong:
+                    parent_dist = str(row.district_name).strip()
+                    if parent_dist in REGIONS:
+                        return deepcopy(REGIONS[parent_dist])
+        except Exception:
+            pass
+            
+    return deepcopy(REGIONS["달서구"])
 
 
 def mock_vulnerability(region: str) -> dict:
