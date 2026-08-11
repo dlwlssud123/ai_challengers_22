@@ -133,32 +133,48 @@ def merge_daegu_boundaries(
     dong_shelter_counts = count_shelters_by_boundary(result, citywide_shelters)
     shelter_counts_available = dong_shelter_counts is not None
     dong_shelter_counts = dong_shelter_counts or {}
+    
+    # 1. 대구 150개 동별 쉼터 공급 점수 (고령인구 1,000명당 쉼터 수) 사전 계산 및 Min-Max 정규화 준비
+    raw_supplies = {}
+    raw_supplies_list = []
+    
+    # 쉼터 개수 목록에서 최대/최소값 확보 (부족도 계산용)
+    shelter_counts_list = [int(v) for v in dong_shelter_counts.values()]
+    maximum_count = max(shelter_counts_list, default=0)
+    minimum_count = min(shelter_counts_list, default=0)
 
-    # 대구 전역 실시간 쉼터 접근성 지리 연산
-    access_lookup = {}
-    if result and citywide_shelters is not None and not citywide_shelters.empty:
-        try:
-            features = result.get("features", [])
-            gdf_boundaries = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
-            
-            # 가상 인구 주입으로 calculate_accessibility 실행 가능화
-            gdf_boundaries["elderly_population"] = 1.0
-            gdf_boundaries["population"] = 1.0
-            
-            gdf_access = calculate_accessibility(
-                gdf_boundaries,
-                citywide_shelters,
-                radius_m=500.0, # 기본 대피 반경 500m
-                analysis_crs="EPSG:5179"
-            )
-            for row in gdf_access.itertuples():
-                access_lookup[str(row.adm_cd)] = {
-                    "coverage_ratio": float(row.coverage_ratio),
-                    "nearest_shelter_distance": float(row.nearest_shelter_distance),
-                }
-        except Exception:
-            pass
+    for feature in result.get("features", []):
+        original = feature.get("properties") or {}
+        adm_cd = str(original.get("adm_cd") or "-")
+        api_name = str(original.get("adm_nm") or original.get("region") or original.get("adm_name") or "행정동명 없음")
+        normalized_api_name = normalize_administrative_name(api_name)
+        
+        # 쉼터 수
+        raw_sc = dong_shelter_counts.get(adm_cd) if shelter_counts_available else None
+        shelter_count = int(raw_sc) if raw_sc is not None else 0
+        
+        # 고령인구 룩업
+        pop_match = None
+        for key, val in pop_lookup.items():
+            if key in normalized_api_name or normalized_api_name in key:
+                pop_match = val
+                break
+        
+        elderly_pop = pop_match["elderly_population"] if pop_match else 0
+        if elderly_pop <= 0:
+            match_check = next((values for k, values in lookup.items() if normalized_api_name.endswith(k) or k.endswith(normalized_api_name)), None)
+            if match_check:
+                elderly_pop = match_check.get("elderly_population", 0)
+                
+        elderly_pop_safe = max(int(elderly_pop), 1)
+        raw_supply = (shelter_count / elderly_pop_safe) * 1000.0
+        raw_supplies[adm_cd] = raw_supply
+        raw_supplies_list.append(raw_supply)
+        
+    min_supply = min(raw_supplies_list, default=0.0)
+    max_supply = max(raw_supplies_list, default=0.0)
 
+    # 2. 메인 루프 돌며 속성 결합 및 통합 취약도 계산
     for feature in result.get("features", []):
         original = feature.get("properties") or {}
         api_name = str(
@@ -197,17 +213,45 @@ def merge_daegu_boundaries(
         )
         adm_cd = str(original.get("adm_cd") or (match or {}).get("adm_cd") or "-")
         
-        # 접근성 지표 추출
-        acc_data = access_lookup.get(adm_cd, {"coverage_ratio": 0.0, "nearest_shelter_distance": float("nan")})
-        coverage_pct = acc_data["coverage_ratio"] * 100
-        distance_val = acc_data["nearest_shelter_distance"]
-        distance_str = f"{distance_val:.0f}m" if not np.isnan(distance_val) else "쉼터 없음"
+        # 고령인구 1천명당 쉼터 수 접근성 공급 점수 (Min-Max 정규화 0~100점)
+        raw_sup = raw_supplies.get(adm_cd, 0.0)
+        if max_supply == min_supply:
+            supply_score = 100.0 if max_supply > 0.0 else 0.0
+        else:
+            supply_score = 100.0 * (raw_sup - min_supply) / (max_supply - min_supply)
+            
+        shelter_accessibility_display = f"{supply_score:.1f}점"
 
         # 인구 정보 포맷팅
         pop_val = pop_match["population"] if pop_match else None
         elderly_val = pop_match["elderly_population"] if pop_match else None
         elderly_ratio_val = pop_match["elderly_ratio"] if pop_match else 0.0
         elderly_display_str = f"{elderly_val:,}명 ({elderly_ratio_val:.1f}%)" if elderly_val is not None else "데이터 연결 필요"
+
+        # 쉼터 갯수
+        raw_sc = dong_shelter_counts.get(adm_cd) if shelter_counts_available else None
+        shelter_count = int(raw_sc) if raw_sc is not None else None
+        
+        # 쉼터 갯수 부족도 계산 (Min-Max)
+        shelter_count_for_gap = shelter_count if shelter_count is not None else 0
+        if maximum_count == minimum_count:
+            shelter_gap = 0.0
+        else:
+            shelter_gap = 100.0 * (maximum_count - shelter_count_for_gap) / (maximum_count - minimum_count)
+
+        # 사회·건강 취약도 기저값 추출
+        base_vulnerability = 50.0
+        if match:
+            base_vulnerability = float(match.get("vulnerability_score") or 50.0)
+        elif district_match:
+            _, dist = district_match
+            base_vulnerability = float(dist.get("vulnerability_score") or 50.0)
+
+        # 실시간 폭염 기상 위험도 추출
+        live_heat = float(live_heat_score) if live_heat_score is not None else 50.0
+
+        # 종합 취약도 연산 (vulnerability_score 40% + live_heat 30% + shelter_gap 30%)
+        total_vulnerability = 0.4 * base_vulnerability + 0.3 * live_heat + 0.3 * shelter_gap
 
         if match:
             score = match["priority_score"]
@@ -221,24 +265,19 @@ def merge_daegu_boundaries(
                 "priority_display": f"{score:.1f}점",
                 "elderly_population": elderly_val or match["elderly_population"],
                 "elderly_display": elderly_display_str if elderly_val is not None else f"{match['elderly_population']:,}명",
-                "heat_score": match["heat_score"],
+                "heat_score": match.get("heat_score", live_heat),
                 "vulnerability_score": match["vulnerability_score"],
-                "access_score": match["access_score"],
+                "vulnerability_display": f"{match['vulnerability_score']:.1f}점",
+                "access_score": match.get("access_score", supply_score),
                 "fill_color": _score_color(score),
                 "line_color": [255, 255, 255, 220],
-                "coverage_ratio_display": f"{coverage_pct:.1f}%",
-                "nearest_shelter_distance_display": distance_str,
+                "coverage_ratio_display": "",  # 하위 호환성 빈값
+                "nearest_shelter_distance_display": "",  # 하위 호환성 빈값
+                "shelter_accessibility_score": supply_score,
+                "shelter_accessibility_display": shelter_accessibility_display
             }
         elif district_match:
             district_name, district = district_match
-            vulnerability_score = float(district.get("vulnerability_score") or 0)
-            score = (
-                0.65 * vulnerability_score + 0.35 * float(live_heat_score)
-                if live_heat_score is not None
-                else vulnerability_score
-            )
-            raw_shelter_count = dong_shelter_counts.get(adm_cd)
-            shelter_count = int(raw_shelter_count) if raw_shelter_count is not None else None
             properties = {
                 "region": api_name,
                 "adm_name": api_name,
@@ -247,8 +286,8 @@ def merge_daegu_boundaries(
                 "has_district_analysis": True,
                 "analysis_status": f"{district.get('region_name')} 구·군 단위 팀 분석",
                 "district_name": str(district.get("region_name") or "-"),
-                "priority_score": score,
-                "priority_display": f"{score:.1f}점",
+                "priority_score": total_vulnerability,
+                "priority_display": f"{total_vulnerability:.1f}점",
                 "district_grade": str(district.get("grade") or "-"),
                 "district_cluster": int(district.get("cluster") or 0),
                 "elderly_ratio": elderly_ratio_val if elderly_ratio_val > 0.0 else float(district.get("elderly_ratio") or 0),
@@ -258,15 +297,17 @@ def merge_daegu_boundaries(
                 "shelter_display": f"{shelter_count:,}곳" if shelter_count is not None else "데이터 연결 필요",
                 "elderly_population": elderly_val,
                 "elderly_display": elderly_display_str,
-                "heat_score": None,
-                "vulnerability_score": vulnerability_score,
-                "vulnerability_display": f"{vulnerability_score:.1f}점",
+                "heat_score": live_heat,
+                "vulnerability_score": total_vulnerability,
+                "vulnerability_display": f"{total_vulnerability:.1f}점",
                 "live_heat_score": live_heat_score,
-                "access_score": None,
-                "fill_color": _score_color(score),
+                "access_score": supply_score,
+                "fill_color": _score_color(total_vulnerability),
                 "line_color": [255, 255, 255, 180],
-                "coverage_ratio_display": f"{coverage_pct:.1f}%",
-                "nearest_shelter_distance_display": distance_str,
+                "coverage_ratio_display": "",  # 하위 호환성 빈값
+                "nearest_shelter_distance_display": "",  # 하위 호환성 빈값
+                "shelter_accessibility_score": supply_score,
+                "shelter_accessibility_display": shelter_accessibility_display
             }
         else:
             properties = {
@@ -276,50 +317,32 @@ def merge_daegu_boundaries(
                 "has_analysis": False,
                 "has_district_analysis": False,
                 "analysis_status": "행정경계만 연결 · 분석 데이터 준비 중",
-                "priority_score": None,
-                "priority_display": "분석 전",
+                "priority_score": total_vulnerability,
+                "priority_display": f"{total_vulnerability:.1f}점",
                 "elderly_population": elderly_val,
                 "elderly_display": elderly_display_str,
-                "heat_score": None,
-                "vulnerability_score": None,
-                "access_score": None,
+                "heat_score": live_heat,
+                "vulnerability_score": total_vulnerability,
+                "vulnerability_display": f"{total_vulnerability:.1f}점",
+                "access_score": supply_score,
                 "fill_color": [100, 116, 139, 55],
                 "line_color": [100, 116, 139, 170],
-                "coverage_ratio_display": f"{coverage_pct:.1f}%",
-                "nearest_shelter_distance_display": distance_str,
+                "coverage_ratio_display": "",  # 하위 호환성 빈값
+                "nearest_shelter_distance_display": "",  # 하위 호환성 빈값
+                "shelter_accessibility_score": supply_score,
+                "shelter_accessibility_display": shelter_accessibility_display
             }
         feature["properties"] = properties
 
-    available_counts = [
-        int((feature.get("properties") or {}).get("shelter_count"))
-        for feature in result.get("features", [])
-        if (feature.get("properties") or {}).get("shelter_count") is not None
-    ]
-    maximum_count = max(available_counts, default=0)
-    minimum_count = min(available_counts, default=0)
     for feature in result.get("features", []):
         properties = feature.get("properties") or {}
-        if heatmap_metric == "vulnerability":
-            map_score = properties.get("vulnerability_score")
-            label = "사회·건강 취약도"
-            properties["fill_color"] = _score_color(float(map_score)) if map_score is not None else [100, 116, 139, 55]
-        elif heatmap_metric == "shelter_gap":
-            count = properties.get("shelter_count")
-            if count is None:
-                map_score = None
-            elif maximum_count == minimum_count:
-                map_score = 0.0
-            else:
-                map_score = 100.0 * (maximum_count - int(count)) / (maximum_count - minimum_count)
-            label = "쉼터 수 부족도"
-            properties["fill_color"] = _score_color(float(map_score)) if map_score is not None else [100, 116, 139, 55]
-        elif heatmap_metric == "shelter_coverage":
+        if heatmap_metric == "shelter_coverage":
             map_score = 0.0
             label = "쉼터 300m 커버 범위"
             properties["fill_color"] = [163, 163, 163, 45]  # 연한 중성 회색 반투명 배경
         else:
             map_score = properties.get("priority_score")
-            label = "극한폭염 정책 우선순위"
+            label = "종합 취약도"
             properties["fill_color"] = _score_color(float(map_score)) if map_score is not None else [100, 116, 139, 55]
             
         properties["map_metric_label"] = label

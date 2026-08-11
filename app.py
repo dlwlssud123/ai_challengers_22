@@ -112,7 +112,7 @@ with st.sidebar:
     st.header("히트맵 기준")
     heatmap_label = st.radio(
         "표시 지수",
-        ["극한폭염 정책 우선순위", "사회·건강 취약도", "쉼터 수 부족도", "쉼터 300m 커버 범위"],
+        ["취약도", "쉼터 300m 커버 범위"],
         index=0,
     )
     st.header("시설 설치 시뮬레이션")
@@ -129,9 +129,7 @@ with st.sidebar:
     )
 
 heatmap_metric = {
-    "극한폭염 정책 우선순위": "policy",
-    "사회·건강 취약도": "vulnerability",
-    "쉼터 수 부족도": "shelter_gap",
+    "취약도": "vulnerability",
     "쉼터 300m 커버 범위": "shelter_coverage",
 }[heatmap_label]
 
@@ -294,8 +292,7 @@ with overview_map_column:
                 "html": (
                     "<b>{region}</b><br/>행정동 코드 {adm_cd}<br/>"
                     "{analysis_status}<br/>"
-                    "<b>최단 쉼터 거리:</b> {nearest_shelter_distance_display}<br/>"
-                    "<b>쉼터 500m 커버율:</b> {coverage_ratio_display}<br/>"
+                    "<b>동별 쉼터 접근성:</b> {shelter_accessibility_display}<br/>"
                     "{map_metric_label} {map_score_display}<br/>"
                     "행정동 쉼터 {shelter_display}"
                 ),
@@ -326,14 +323,8 @@ with overview_info_column:
         st.caption(f"행정동 코드: {overview_properties['adm_cd']}")
         if overview_properties.get("has_district_analysis"):
             st.success(overview_properties["analysis_status"])
-            st.metric("극한폭염 정책 우선순위", overview_properties["priority_display"])
-            
-            # 실시간 지리 접근성 분석 지표 메트릭 추가
-            col1, col2 = st.columns(2)
-            col1.metric("최단 쉼터 거리", overview_properties.get("nearest_shelter_distance_display", "-"))
-            col2.metric("500m 커버율", overview_properties.get("coverage_ratio_display", "-"))
-
-            st.metric("사회·건강 취약도", overview_properties.get("vulnerability_display", "-"))
+            st.metric("종합 취약도", overview_properties.get("priority_display", "-"))
+            st.metric("동별 쉼터 접근성", overview_properties.get("shelter_accessibility_display", "-"))
             st.metric("행정동 고령인구", overview_properties.get("elderly_display", "데이터 연결 필요"))
             st.metric("등급", overview_properties.get("district_grade", "-"))
             st.metric("행정동 공공 API 쉼터", overview_properties.get("shelter_display", "데이터 연결 필요"))
@@ -342,7 +333,7 @@ with overview_info_column:
             st.caption(
                 f"고령인구 비율 {overview_properties.get('elderly_ratio', 0):.1f}% · "
                 f"온열질환자 {overview_properties.get('heat_illness_count', 0):.0f}명 · "
-                "취약도는 구·군 단위로 동일하지만 고령인구, 최단 거리, 커버율은 행정동별 실시간 연산값입니다."
+                "취약도는 사회·기상·쉼터 부족을 종합한 실시간 취약도이며, 쉼터 접근성은 고령인구 대비 쉼터 공급 능력을 대구시 내에서 상대 비교하여 정규화(Min-Max)한 점수입니다."
             )
         else:
             st.info("현재는 행정경계 정보만 연결된 지역입니다.")
