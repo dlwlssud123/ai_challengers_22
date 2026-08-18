@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.services.dashboard import build_allocation, build_overview
+from backend.services.dashboard import build_ai_briefing, build_allocation, build_overview, simulate_what_if
 from backend.services.ml_prediction import build_ml_scenario
 from backend.services.cluster_analysis import build_cluster_analysis, build_cluster_snapshot
 
@@ -78,3 +78,14 @@ def test_cluster_analysis_returns_dbscan_shap_contract():
     assert result["clusters"]
     assert result["assignments"]
     assert result["assignments"][0]["main_causes"]
+
+
+def test_ai_briefing_explains_facility_allocation_simulation():
+    payload = {"budget": 50_000_000, "unit_cost": 10_000_000, "max_facilities": 5, "facility_type": "스마트그늘막"}
+    simulation = simulate_what_if(payload)
+    report = build_ai_briefing({**payload, "simulation": simulation})
+    assert report["status"] == "success"
+    assert report["report_type"] == "facility_allocation_simulation"
+    assert report["simulation_summary"]["new_facilities_count"] == simulation["new_facilities_count"]
+    assert report["policy_recommendation"]["recommended_policies"]
+    assert "행정동을 찾을 수 없습니다" not in report["policy_recommendation"]["summary"]

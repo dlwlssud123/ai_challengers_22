@@ -538,66 +538,110 @@ def simulate_what_if(payload: dict) -> dict:
 
 
 def build_ai_briefing(payload: dict) -> dict:
-    adm_cd = str(payload.get("sgis_adm_cd") or "")
+    """시설 배분 시뮬레이션 결과를 설명하는 AI 보고서 생성."""
+    simulation = payload.get("simulation")
+    if not isinstance(simulation, dict):
+        simulation = simulate_what_if(payload)
+
+    budget = int(payload.get("budget") or simulation.get("budget") or 0)
+    max_facilities = int(payload.get("max_facilities") or simulation.get("new_facilities_count") or 0)
+    facility_type = str(payload.get("facility_type") or "스마트쉼터")
+    unit_cost = int(payload.get("unit_cost") or 10_000_000)
+    allocated = simulation.get("allocated_dongs") or []
     records = enrich_records(load_summary_records())
-    record = next((row for row in records if str(row.get("sgis_adm_cd")) == adm_cd), None)
-    if not record:
-        return {"status": "error", "message": "행정동을 찾을 수 없습니다."}
-    
-    region = record.get("full_adm_name") or record.get("adm_name")
-    elderly = int(record.get("elderly_population_60_plus") or 0)
-    coverage = float(record.get("coverage_ratio_500m_area") or 0.0) * 100.0
-    c_score = float(record.get("composite_risk_score") or 50.0)
-    grade = record.get("composite_risk_grade", "보통")
-    
-    p_driver = record.get("primary_risk_driver", "고령층 밀집")
-    p_desc = record.get("primary_driver_desc", "취약인구 보호 필요")
-    
-    candidates = [
-        {
-            "name": f"{region} 주민센터·보행축 거점",
-            "facility_type": "스마트 쿨링 쉼터 (IoT 연계)",
-            "estimated_cost": 30_000_000,
-            "additional_covered_population": int(elderly * 0.18),
-            "reason": f"주요 취약 원인인 [{p_driver}] 해소를 위한 보행 결절점 대피소 확충",
-        },
-        {
-            "name": f"{region} 전통시장 및 횡단보도 대기구간",
-            "facility_type": "스마트 그늘막 & 쿨링포그",
-            "estimated_cost": 12_000_000,
-            "additional_covered_population": int(elderly * 0.09),
-            "reason": "단기 이동 중 열사병 방지를 위한 긴급 열대피 그늘막 설치",
-        },
-    ]
-    analysis_result = {
-        "region": region,
-        "vulnerability": {
-            "vulnerability_score": c_score,
-            "vulnerability_grade": grade,
-            "main_causes": [
-                {"name": f["name"], "value": f["score"], "contribution": f["weight"]}
-                for f in record.get("risk_driver_breakdown", [])
-            ],
-            "vulnerable_population": elderly,
-        },
-        "accessibility": {
-            "facility_score": float(record.get("grid_population_weighted_accessibility_index") or 0.0) * 100.0,
-            "nearest_shelter_distance_m": float(record.get("grid_mean_nearest_shelter_distance_m") or 0.0),
-            "underserved_population": int(elderly * max(0.0, 1.0 - coverage / 100.0)),
-            "coverage_rate": coverage,
-            "blind_spot": coverage < 70.0,
-            "blind_spot_count": 0,
-            "existing_facilities": [],
-            "map_center": {"latitude": 35.87, "longitude": 128.60},
-        },
-        "optimization": {
-            "budget": int(payload.get("budget") or 0),
-            "max_facilities": int(payload.get("max_facilities") or 0),
-            "total_estimated_cost": 42_000_000,
-            "recommended_locations": candidates,
-            "before": {"coverage_rate": coverage, "underserved_population": int(elderly * max(0.0, 1.0 - coverage / 100.0)), "blind_spot_count": 0},
-            "after": {"coverage_rate": min(100.0, coverage + 25.0), "underserved_population": int(elderly * max(0.0, .75 - coverage / 100.0)), "blind_spot_count": 0},
-        },
+    by_name = {
+        (str(row.get("district_name") or ""), str(row.get("adm_name") or "")): row
+        for row in records
     }
-    policy = AlanPolicyClient().recommend_policy(analysis_result)
-    return {"status": "success", "region": region, "policy_recommendation": policy}
+
+    target_regions = []
+    for item in allocated[:6]:
+        record = by_name.get((str(item.get("district_name") or ""), str(item.get("dong_name") or "")), {})
+        target_regions.append(
+            {
+                "name": item.get("full_name") or f"{item.get('district_name', '')} {item.get('dong_name', '')}".strip(),
+                "district_name": item.get("district_name"),
+                "dong_name": item.get("dong_name"),
+                "risk_score": item.get("current_risk_score"),
+                "risk_grade": item.get("current_grade"),
+                "current_coverage_pct": item.get("current_coverage_pct"),
+                "projected_coverage_pct": item.get("projected_coverage_pct"),
+                "coverage_gain_pct": round(float(item.get("projected_coverage_pct") or 0) - float(item.get("current_coverage_pct") or 0), 1),
+                "additional_beneficiaries": item.get("additional_beneficiaries"),
+                "primary_driver": record.get("primary_risk_driver"),
+                "secondary_driver": record.get("secondary_risk_driver"),
+                "elderly_population": record.get("elderly_population_60_plus"),
+                "future_expected_patients": record.get("future_expected_patients"),
+            }
+        )
+
+    total_cost = int(simulation.get("spent_budget") or 0)
+    new_facilities = int(simulation.get("new_facilities_count") or 0)
+    beneficiaries = int(simulation.get("total_added_beneficiaries") or 0)
+    reduction = float(simulation.get("overall_blindspot_reduction_rate") or 0.0)
+    avg_improvement = float(simulation.get("avg_coverage_improvement_pct") or 0.0)
+    usage_pct = round((total_cost / budget) * 100.0, 1) if budget else 0.0
+
+    summary = (
+        f"총 {budget:,}원 예산으로 {facility_type} {new_facilities}개소를 우선 배분하면 "
+        f"{beneficiaries:,}명의 고령인구가 새로 보호권에 들어오고, "
+        f"사각지대 해소율은 약 {reduction:.1f}%로 추정됩니다. "
+        f"배분 대상은 종합 위험지수와 500m 커버리지 부족이 큰 행정동을 우선 선정했습니다."
+    )
+
+    policies = []
+    for idx, region in enumerate(target_regions[:3], start=1):
+        policies.append(
+            {
+                "policy_name": f"{idx}. {region['name']} {facility_type} 우선 배치",
+                "reason": (
+                    f"현재 커버리지 {region['current_coverage_pct']}%에서 "
+                    f"{region['projected_coverage_pct']}%로 개선되어 "
+                    f"약 {int(region.get('additional_beneficiaries') or 0):,}명 보호 효과가 예상됩니다. "
+                    f"주요 취약 원인은 {region.get('primary_driver') or '복합 취약요인'}입니다."
+                ),
+            }
+        )
+
+    if not policies:
+        policies.append(
+            {
+                "policy_name": "시설 배분 조건 재검토",
+                "reason": "현재 예산 또는 최대 설치 수 조건에서 신규 배분 대상이 산출되지 않았습니다. 예산, 단가, 설치 수 제한을 조정해야 합니다.",
+            }
+        )
+
+    recommendation = {
+        "priority_level": "시설 배분 시뮬레이션 설명",
+        "summary": summary,
+        "recommended_policies": policies,
+        "implementation_steps": [
+            "상위 배분 행정동의 보행 결절점, 횡단보도 대기공간, 경로당·복지관 주변을 현장 확인합니다.",
+            "전기 인입, 보행 방해, 사유지 저촉 여부를 확인한 뒤 설치 가능 지점을 확정합니다.",
+            "설치 후 500m 보행권과 고령인구 보호권을 다시 계산해 사각지대 해소율을 갱신합니다.",
+        ],
+        "cautions": [
+            "본 결과는 현재 데이터 기반 What-If 추정이며 실제 설치 효과의 인과 추정치는 아닙니다.",
+            "행정동 내부 실제 입지는 보행량, 그늘 연속성, 전력·수도 인프라를 함께 고려해야 합니다.",
+        ],
+    }
+
+    return {
+        "status": "success",
+        "region": "대구광역시 시설 배분 시뮬레이션",
+        "report_type": "facility_allocation_simulation",
+        "simulation_summary": {
+            "budget": budget,
+            "unit_cost": unit_cost,
+            "facility_type": facility_type,
+            "spent_budget": total_cost,
+            "budget_usage_pct": usage_pct,
+            "new_facilities_count": new_facilities,
+            "total_added_beneficiaries": beneficiaries,
+            "avg_coverage_improvement_pct": avg_improvement,
+            "overall_blindspot_reduction_rate": reduction,
+            "target_regions": target_regions,
+        },
+        "policy_recommendation": recommendation,
+    }
+

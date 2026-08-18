@@ -200,7 +200,7 @@ const api = {
     if (!res.ok) throw new Error('What-If 시뮬레이션을 계산하지 못했습니다.');
     return res.json();
   },
-  async briefing(payload: { sgis_adm_cd: string; budget: number; max_facilities: number }) {
+  async briefing(payload: { budget: number; unit_cost: number; max_facilities: number; facility_type: string; simulation?: WhatIfResult | null }) {
     const res = await fetch('/api/ai-briefing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -782,16 +782,17 @@ function PolicyOptimizationView({
       showToast('생성된 브리핑 내용이 없습니다.');
       return;
     }
-    const text = `[대구 폭염 정책 브리핑]\n대상: ${briefing.region}\n등급: ${briefing.policy_recommendation.priority_level}\n요약: ${briefing.policy_recommendation.summary}`;
+    const sim = briefing.simulation_summary;
+    const text = `[대구 폭염 시설 배분 시뮬레이션 보고서]\n대상: ${briefing.region}\n예산: ${fmtNumber(sim?.budget)}원\n신규 시설: ${fmtNumber(sim?.new_facilities_count)}개소\n신규 수혜 고령인구: ${fmtNumber(sim?.total_added_beneficiaries)}명\n요약: ${briefing.policy_recommendation.summary}`;
     navigator.clipboard.writeText(text);
-    showToast('📋 AI 정책 제언 보고서가 클립보드에 복사되었습니다.');
+    showToast('📋 시설 배분 시뮬레이션 보고서가 클립보드에 복사되었습니다.');
   };
 
   return (
     <div className="page">
       <PageHeader
-        title="예산 최적화 & AI 정책 제언 시스템"
-        subtitle="투입 예산에 따른 쉼터 사각지대 해소율(What-If)을 실시간 시뮬레이션하고, 현장 즉시 보고용 AI 정책 제언서를 생성합니다"
+        title="예산 최적화 & 시설 배분 설명 보고서"
+        subtitle="투입 예산에 따른 쉼터 사각지대 해소율과 배분 대상 선정 근거를 설명 보고서로 정리합니다"
         tag="💡 What-If 시뮬레이션"
       />
 
@@ -850,7 +851,7 @@ function PolicyOptimizationView({
         </div>
       )}
 
-      {/* What-If 배분 상세 & AI 정책 브리핑 2단 레이아웃 */}
+      {/* What-If 배분 상세 & 배분 설명 보고서 2단 레이아웃 */}
       <div className="recommend-layout" style={{ marginTop: 12 }}>
         {/* 좌측: What-If Before vs After 배분 결과 */}
         <section className="card">
@@ -898,18 +899,18 @@ function PolicyOptimizationView({
           </div>
         </section>
 
-        {/* 우측: AI 정책 제언서 & 보고서 생성 */}
+        {/* 우측: 시설 배분 설명 보고서 생성 */}
         <section className="card briefing-document">
           <div className="card-header" style={{ justifyContent: 'space-between' }}>
             <div>
-              <div className="card-title">🤖 AI 정책 제언 & 보고서 생성</div>
+              <div className="card-title">🤖 시설 배분 시뮬레이션 설명</div>
               <div style={{ fontSize: 11, color: '#8295a4', marginTop: 2 }}>
-                선택 행정동: <b style={{ color: '#f8b04c' }}>{selected?.full_adm_name || '전체'}</b>
+                분석 대상: <b style={{ color: '#f8b04c' }}>What-If 배분 결과 전체</b>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              <button className="primary-button" style={{ padding: '6px 12px', fontSize: 11 }} onClick={onRunBriefing} disabled={loadingBrief || !selected}>
-                {loadingBrief ? '생성 중...' : '✦ AI 정책 보고서 생성'}
+              <button className="primary-button" style={{ padding: '6px 12px', fontSize: 11 }} onClick={onRunBriefing} disabled={loadingBrief || !whatIfResult}>
+                {loadingBrief ? '생성 중...' : '✦ 배분 설명 보고서 생성'}
               </button>
               <button className="secondary-button" style={{ padding: '6px 12px', fontSize: 11 }} onClick={copyBriefing}>
                 📋 복사
@@ -928,7 +929,7 @@ function PolicyOptimizationView({
                 </div>
 
                 <div style={{ marginTop: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#f8fafc', marginBottom: 8 }}>📌 맞춤형 권고 사업 목록</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#f8fafc', marginBottom: 8 }}>📌 배분 대상별 선정 근거</div>
                   {briefing.policy_recommendation.recommended_policies?.map((p: any, i: number) => (
                     <div key={i} className="policy-recom-card">
                       <b style={{ color: '#38bdf8', fontSize: 12 }}>{i + 1}. {p.policy_name}</b>
@@ -938,14 +939,14 @@ function PolicyOptimizationView({
                 </div>
 
                 <div className="ai-caution-box">
-                  <b>⚠️ 정책 수립 시 주의사항:</b> 본 AI 분석은 공간 통계 기반이며, 실제 설치 시 보행자 통행 방해 여부, 한전 인입 전력망 확보, 사유지 저촉 여부를 현장 실사해야 합니다.
+                  <b>⚠️ 정책 수립 시 주의사항:</b> 본 배분 시뮬레이션은 공간 통계 기반이며, 실제 설치 시 보행자 통행 방해 여부, 한전 인입 전력망 확보, 사유지 저촉 여부를 현장 실사해야 합니다.
                 </div>
               </div>
             ) : (
               <div style={{ padding: '36px 16px', textAlign: 'center', color: '#7a8e9e' }}>
                 <div style={{ fontSize: 24, marginBottom: 8 }}>📄</div>
-                <div>우측 상단의 <b>[✦ AI 정책 보고서 생성]</b> 버튼을 누르면</div>
-                <div style={{ fontSize: 11, marginTop: 4 }}>선택된 행정동의 취약 원인에 맞춘 맞춤형 사업 제언서가 자동으로 생성됩니다.</div>
+                <div>우측 상단의 <b>[✦ 배분 설명 보고서 생성]</b> 버튼을 누르면</div>
+                <div style={{ fontSize: 11, marginTop: 4 }}>현재 What-If 배분 결과의 선정 근거와 기대효과 설명서가 자동으로 생성됩니다.</div>
               </div>
             )}
           </div>
@@ -1024,10 +1025,13 @@ function App() {
 
   // Run AI Briefing
   const runBriefing = async () => {
-    if (!selected) return;
+    if (!whatIfResult) {
+      showToast('먼저 What-If 시뮬레이션을 실행하세요.');
+      return;
+    }
     setLoadingBrief(true);
     try {
-      const res = await api.briefing({ sgis_adm_cd: selected.sgis_adm_cd, budget, max_facilities: maxFacilities });
+      const res = await api.briefing({ budget, unit_cost: unitCost, max_facilities: maxFacilities, facility_type: facilityType, simulation: whatIfResult });
       setBriefing(res);
     } catch (e) {
       console.error(e);
