@@ -10,3 +10,4 @@ scikit-learn>=1.5,<2
 PuLP>=2.9,<4
 pydantic>=2.9,<3
 pytest>=8,<9
+shap>=0.45.0
