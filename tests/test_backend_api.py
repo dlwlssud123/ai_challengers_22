@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from backend.services.dashboard import build_allocation, build_overview
 from backend.services.ml_prediction import build_ml_scenario
+from backend.services.cluster_analysis import build_cluster_analysis, build_cluster_snapshot
 
 
 def test_overview_contains_citywide_boundaries_and_shelters():
@@ -43,3 +44,23 @@ def test_ml_scenario_returns_facility_intervention_estimate():
     assert payload["total_cost"] == 52_000_000
     assert payload["scenario"]["expected_patients_after"] <= payload["baseline"]["expected_patients"]
     assert payload["model"]["name"] == "GradientBoostingRegressor"
+
+
+def test_cluster_analysis_returns_dbscan_shap_contract():
+    snapshot = build_cluster_snapshot()
+    assert len(snapshot) == 150
+    assert set(snapshot[0]["features"]) == {
+        "heat_exposure",
+        "elderly_concentration",
+        "green_deficit",
+        "access_deficit",
+        "future_heat_illness_risk",
+        "response_facility_shortage",
+    }
+    result = build_cluster_analysis()
+    assert result["metadata"]["record_count"] == 150
+    assert result["metadata"]["dbscan"]["cluster_count"] >= 2
+    assert result["global_feature_importance"]
+    assert result["clusters"]
+    assert result["assignments"]
+    assert result["assignments"][0]["main_causes"]

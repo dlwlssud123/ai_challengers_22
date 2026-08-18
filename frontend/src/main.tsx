@@ -5,7 +5,7 @@ import './styles.css';
 
 // ── Types ──────────────────────────────────────────
 type MetricMode = 'vulnerability' | 'accessibility' | 'future-risk';
-type PageKey = 'dashboard' | 'risk' | 'access' | 'future' | 'recommend' | 'briefing';
+type PageKey = 'dashboard' | 'risk' | 'access' | 'future' | 'cluster' | 'recommend' | 'briefing';
 
 type Kpis = {
   dong_count: number;
@@ -64,6 +64,45 @@ type Feature = {
   properties: District & { fill_color: number[]; line_color: number[]; map_score: number; region: string };
 };
 
+type ClusterAssignment = {
+  dong_code: string;
+  sgis_adm_cd: string;
+  district_name: string;
+  dong_name: string;
+  full_adm_name: string;
+  dbscan_cluster: number;
+  cluster_name: string;
+  cluster_type: string;
+  is_noise: boolean;
+  global_installation_priority: number;
+  main_causes: string[];
+  recommended_facilities: string[];
+  feature_zscores: Record<string, number>;
+  features: Record<string, number>;
+};
+
+type ClusterAnalysis = {
+  metadata: {
+    record_count: number;
+    feature_labels: Record<string, string>;
+    dbscan: { cluster_count: number; noise_count: number; noise_ratio: number; silhouette_score?: number };
+    surrogate_validation: { model: string; accuracy: number; macro_f1: number; shap_method: string };
+    warnings: string[];
+  };
+  global_feature_importance: Array<{ key: string; label: string; mean_abs_shap: number }>;
+  clusters: Array<{
+    dbscan_cluster: number;
+    cluster_name: string;
+    cluster_type: string;
+    dong_count: number;
+    main_causes: string[];
+    recommended_facilities: string[];
+    top_shap_features: Array<{ key: string; label: string; mean_abs_shap: number }>;
+    priority_dongs: ClusterAssignment[];
+  }>;
+  assignments: ClusterAssignment[];
+};
+
 type Shelter = {
   shelter_id: string;
   name: string;
@@ -120,6 +159,11 @@ const api = {
       body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error('ML 시나리오를 계산하지 못했습니다.');
+    return res.json();
+  },
+  async clusterAnalysis(): Promise<ClusterAnalysis> {
+    const res = await fetch('/api/cluster-analysis');
+    if (!res.ok) throw new Error('취약 원인 분석을 불러오지 못했습니다.');
     return res.json();
   }
 };
@@ -589,6 +633,117 @@ function FutureRiskPage({ data, selectedDistrict, selected, onDistrictClick, onS
   );
 }
 
+
+function ClusterAnalysisPage({ data, analysis, selected, selectedDistrict, onDistrictClick, onSelect }: {
+  data: Overview; analysis: ClusterAnalysis | null; selected?: District; selectedDistrict?: string; onDistrictClick: (n: string) => void; onSelect: (d: District) => void;
+}) {
+  const selectedCode = String(selected?.sgis_adm_cd || '');
+  const selectedResidentCode = String(selected?.resident_adm_code || '');
+  const assignment = analysis?.assignments.find(a => String(a.sgis_adm_cd) === selectedCode || String(a.dong_code) === selectedResidentCode);
+  const maxImportance = Math.max(1e-9, ...(analysis?.global_feature_importance.map(f => f.mean_abs_shap) || [1]));
+  const clusters = analysis?.clusters || [];
+  const topAssignments = analysis?.assignments.slice(0, 6) || [];
+
+  return (
+    <div className="page">
+      <PageHeader title="DBSCAN · SHAP 취약 원인 분석" subtitle="행정동별 취약도·미래위험·시설부족도를 6개 Feature로 묶어 유형화하고 주요 원인을 설명합니다" />
+      <div className="kpi-grid">
+        <KpiCard icon="🧩" label="DBSCAN 군집" value={<>{analysis?.metadata.dbscan.cluster_count || 0}<small>개</small></>} note={`노이즈 ${analysis?.metadata.dbscan.noise_count || 0}개`} />
+        <KpiCard icon="📐" label="Silhouette" value={fmtScore(analysis?.metadata.dbscan.silhouette_score)} note="표준화 Feature 기반" />
+        <KpiCard icon="🧠" label="대리모델 정확도" value={`${fmtScore((analysis?.metadata.surrogate_validation.accuracy || 0) * 100)}%`} note={analysis?.metadata.surrogate_validation.model || 'RandomForest'} />
+        <KpiCard icon="🔎" label="SHAP 방식" value={analysis?.metadata.surrogate_validation.shap_method?.includes('fallback') ? 'Fallback' : 'TreeExplainer'} note="인과효과가 아닌 군집 설명" />
+      </div>
+      <div className="dashboard-main">
+        <section className="card map-card">
+          <div className="card-header">
+            <div className="card-title">행정동 취약도 지도 <span className="info-dot">i</span></div>
+            <span style={{ fontSize: 12, color: '#8496a4' }}>행정동 클릭 → 유형/원인 확인</span>
+          </div>
+          <div className="map-body" style={{ minHeight: 515 }}>
+            <div className="map-stage" style={{ minHeight: 515, padding: 0 }}>
+              <AppShelterMap data={data} selectedDistrict={selectedDistrict} onDistrictClick={onDistrictClick} onSelect={onSelect} height="515px" />
+            </div>
+          </div>
+        </section>
+        <div className="dashboard-side">
+          <section className="card">
+            <div className="card-header"><div className="card-title">선택 행정동 분류</div></div>
+            {assignment ? (
+              <div style={{ padding: '0 16px 16px', display: 'grid', gap: 12 }}>
+                <div className="selected-item"><span className="candidate-badge">#{assignment.global_installation_priority}</span><b>{assignment.full_adm_name}</b></div>
+                <div className="metric-four" style={{ padding: 0 }}>
+                  <div className="metric-box"><div className="m-icon">C</div><div><span>군집</span><b>{assignment.cluster_name}</b></div></div>
+                  <div className="metric-box"><div className="m-icon">!</div><div><span>유형</span><b>{assignment.cluster_type}</b></div></div>
+                </div>
+                <div style={{ fontSize: 12, color: '#a9bac7', lineHeight: 1.75 }}>
+                  주요 원인: <b style={{ color: 'var(--orange-2)' }}>{assignment.main_causes.join(' · ')}</b><br />
+                  추천 대응: <b style={{ color: 'var(--green)' }}>{assignment.recommended_facilities.join(' · ')}</b>
+                </div>
+                {Object.entries(assignment.feature_zscores).map(([key, value]) => (
+                  <div key={key}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#b8c5cd' }}>
+                      <b>{analysis?.metadata.feature_labels?.[key] || key}</b><span>{fmtScore(value)}</span>
+                    </div>
+                    <MiniBar value={Math.max(0, Number(value) + 2)} max={4} />
+                  </div>
+                ))}
+              </div>
+            ) : <div style={{ padding: 16, color: 'var(--muted)' }}>행정동을 선택하면 군집과 취약 원인이 표시됩니다.</div>}
+          </section>
+          <section className="card">
+            <div className="card-header"><div className="card-title">전역 SHAP 중요도</div></div>
+            <div style={{ padding: '0 16px 16px' }}>
+              {(analysis?.global_feature_importance || []).map(item => (
+                <div key={item.key} style={{ margin: '12px 0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#b8c5cd' }}>
+                    <b>{item.label}</b><span>{item.mean_abs_shap.toFixed(4)}</span>
+                  </div>
+                  <MiniBar value={item.mean_abs_shap} max={maxImportance} />
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+      <div className="bottom-grid">
+        <section className="card">
+          <div className="card-header"><div className="card-title">취약 유형별 군집</div></div>
+          <div className="candidate-table">
+            <div className="candidate-head" style={{ gridTemplateColumns: '1.2fr 54px 1.4fr 1.4fr' }}>
+              <span>군집</span><span>동 수</span><span>주요 원인</span><span>추천 대응</span>
+            </div>
+            {clusters.map(cluster => (
+              <div className="candidate-row" key={cluster.cluster_name} style={{ gridTemplateColumns: '1.2fr 54px 1.4fr 1.4fr' }}>
+                <b>{cluster.cluster_name}</b>
+                <span className="score">{cluster.dong_count}</span>
+                <span>{cluster.main_causes.join(' · ')}</span>
+                <span>{cluster.recommended_facilities.join(' · ')}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="card">
+          <div className="card-header"><div className="card-title">설치 우선순위 상위 행정동</div></div>
+          <div className="rank-list">
+            {topAssignments.map(item => (
+              <div className="rank-row" key={item.dong_code} style={{ gridTemplateColumns: '30px 1fr 1.2fr', cursor: 'pointer' }} onClick={() => { const d = data.districts.find(row => String(row.sgis_adm_cd) === String(item.sgis_adm_cd)); if (d) onSelect(d); }}>
+                <div className="rank-num">{item.global_installation_priority}</div>
+                <b style={{ fontSize: 11 }}>{item.full_adm_name}</b>
+                <span style={{ fontSize: 10, color: '#9fb0be' }}>{item.main_causes.join(' · ')}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+      {analysis?.metadata.warnings?.length ? (
+        <section className="card assumption-card" style={{ marginTop: 16 }}>
+          <b>해석 주의</b><br />{analysis.metadata.warnings.join(' / ')}
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function AllocationPage({
   budget, setBudget, unitCost, setUnitCost, maxFacilities, setMaxFacilities, allocation
 }: {
@@ -789,6 +944,7 @@ const NAV_ITEMS: { key: PageKey; icon: string; label: string }[] = [
   { key: 'risk',      icon: '🗺️', label: '폭염 취약도 지도' },
   { key: 'access',   icon: '🚶', label: '접근성 분석' },
   { key: 'future',   icon: '📈', label: '2030 예측' },
+  { key: 'cluster',  icon: '🔎', label: '취약 원인 분석' },
   { key: 'recommend',icon: '📌', label: '예산 배분' },
   { key: 'briefing', icon: '📄', label: 'AI 정책 브리핑' },
 ];
@@ -806,6 +962,7 @@ function App() {
   const [allocation, setAllocation] = React.useState<any[]>([]);
   const [briefing, setBriefing] = React.useState<any | null>(null);
   const [loadingBrief, setLoadingBrief] = React.useState(false);
+  const [clusterAnalysis, setClusterAnalysis] = React.useState<ClusterAnalysis | null>(null);
 
   React.useEffect(() => {
     api.overview(metric).then(next => {
@@ -816,6 +973,10 @@ function App() {
       });
     }).catch(console.error);
   }, [metric]);
+
+  React.useEffect(() => {
+    api.clusterAnalysis().then(setClusterAnalysis).catch(console.error);
+  }, []);
 
   React.useEffect(() => {
     api.allocation({ budget, unit_cost: unitCost, max_facilities: maxFacilities })
@@ -855,6 +1016,7 @@ function App() {
       case 'risk':      return <RiskPage data={overview} selectedDistrict={selectedDistrict} onDistrictClick={handleDistrictClick} onSelect={setSelected} />;
       case 'access':    return <AccessPage data={overview} selectedDistrict={selectedDistrict} onDistrictClick={handleDistrictClick} onSelect={setSelected} />;
       case 'future':    return <FutureRiskPage data={overview} selectedDistrict={selectedDistrict} selected={selected ?? undefined} onDistrictClick={handleDistrictClick} onSelect={setSelected} />;
+      case 'cluster':   return <ClusterAnalysisPage data={overview} analysis={clusterAnalysis} selected={selected ?? undefined} selectedDistrict={selectedDistrict} onDistrictClick={handleDistrictClick} onSelect={setSelected} />;
       case 'recommend': return <AllocationPage data={overview} budget={budget} setBudget={setBudget} unitCost={unitCost} setUnitCost={setUnitCost} maxFacilities={maxFacilities} setMaxFacilities={setMaxFacilities} allocation={allocation} />;
       case 'briefing':  return <BriefingPage selected={selected ?? undefined} budget={budget} maxFacilities={maxFacilities} briefing={briefing} loadingBrief={loadingBrief} onRun={runBriefing} />;
       default: return null;
@@ -876,6 +1038,7 @@ function App() {
                 if (item.key === 'risk') setMetric('vulnerability');
                 if (item.key === 'access') setMetric('accessibility');
                 if (item.key === 'future') setMetric('future-risk');
+                if (item.key === 'cluster') setMetric('vulnerability');
               }}
             >
               <span className="nav-icon">{item.icon}</span>
