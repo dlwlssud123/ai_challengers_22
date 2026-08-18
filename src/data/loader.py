@@ -17,6 +17,7 @@ from src.data.demo import DEFAULT_DONG_NAMES, make_demo_areas
 from src.data.http import DataSourceError, JsonCache
 from src.data.kma_surface import absolute_heat_hazard_score, fetch_latest_daegu_weather
 from src.data.safety_shelters import (
+    CACHE_KEY as SAFETY_SHELTER_CACHE_KEY,
     fetch_daegu_shelter_payload,
     normalize_safety_shelters,
 )
@@ -128,6 +129,14 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
             shelters = citywide_shelters
         except DataSourceError as exc:
             shelter_warning = str(exc)
+
+    if shelters.empty:
+        cached_shelters = JsonCache(CACHE_DIR).load(SAFETY_SHELTER_CACHE_KEY)
+        if cached_shelters is not None:
+            citywide_shelters = normalize_safety_shelters(cached_shelters.payload)
+            shelters = citywide_shelters
+            shelter_source_mode = "cache"
+            shelter_fetched_at = cached_shelters.fetched_at
 
     if shelters.empty:
         try:

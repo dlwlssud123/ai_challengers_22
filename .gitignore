@@ -11,3 +11,7 @@ data/cache/
 data/processed/
 heatwave-project (4)/
 outputs/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
