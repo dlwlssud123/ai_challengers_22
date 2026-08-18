@@ -89,30 +89,40 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, '&#039;');
 }
 
-function colorToRgba(color: unknown): string {
-  if (!Array.isArray(color) || color.length < 3) return 'rgba(14, 165, 233, 0.75)';
-  const [r, g, b, a = 200] = color as number[];
-  return `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
+/** 점수에 따른 5색 히트맵 색상 및 등급 (지도 폴리곤, 툴팁, 범례 완전 일치 단일 함수) */
+export function getScoreGradeAndColor(scoreVal: unknown): {
+  grade: string;
+  color: string;
+  badgeClass: string;
+  score: number;
+} {
+  const num = Number(scoreVal);
+  if (isNaN(num)) {
+    return { grade: '보통', color: 'rgba(2, 132, 199, 0.88)', badgeClass: 'vuln-moderate', score: 30 };
+  }
+  // 1. 심각 (80~100점): 선명한 빨강
+  if (num >= 80) {
+    return { grade: '심각', color: 'rgba(220, 38, 38, 0.88)', badgeClass: 'vuln-severe', score: num };
+  }
+  // 2. 위험 (60~80점): 선명한 주황
+  if (num >= 60) {
+    return { grade: '위험', color: 'rgba(249, 115, 22, 0.88)', badgeClass: 'vuln-danger', score: num };
+  }
+  // 3. 주의 (40~60점): 선명한 노랑/황색
+  if (num >= 40) {
+    return { grade: '주의', color: 'rgba(234, 179, 8, 0.88)', badgeClass: 'vuln-warn', score: num };
+  }
+  // 4. 보통 (20~40점): 선명한 하늘색/파랑
+  if (num >= 20) {
+    return { grade: '보통', color: 'rgba(2, 132, 199, 0.88)', badgeClass: 'vuln-moderate', score: num };
+  }
+  // 5. 양호 (0~20점): 선명한 초록
+  return { grade: '양호', color: 'rgba(22, 163, 74, 0.88)', badgeClass: 'vuln-safe', score: num };
 }
 
-/** 점수에 따른 5색 히트맵 색상 (지도 폴리곤, 툴팁, 범례 완전 일치) */
 export function getFeatureColor(props: any): string {
   const score = props?.composite_risk_score ?? props?.map_score ?? props?.vulnerability_score;
-  if (score == null || isNaN(Number(score))) {
-    if (Array.isArray(props?.fill_color)) return colorToRgba(props.fill_color);
-    return 'rgba(14, 165, 233, 0.75)'; // 기본 보통(파랑)
-  }
-  const val = Number(score);
-  // 심각 (80~100): 빨강
-  if (val >= 80) return 'rgba(220, 38, 38, 0.85)';
-  // 위험 (60~80): 주황
-  if (val >= 60) return 'rgba(249, 115, 22, 0.85)';
-  // 주의 (40~60): 노랑 / 황색
-  if (val >= 40) return 'rgba(234, 179, 8, 0.85)';
-  // 보통 (20~40): 선명한 하늘색 / 파랑
-  if (val >= 20) return 'rgba(14, 165, 233, 0.80)';
-  // 양호 (0~20): 선명한 초록색
-  return 'rgba(34, 197, 94, 0.80)';
+  return getScoreGradeAndColor(score).color;
 }
 
 function createShelterPopup(shelter: Shelter) {
@@ -405,22 +415,11 @@ export function DaeguShelterMap({
   const onEachDong = React.useCallback((feature: any, layer: L.Layer) => {
     const props = feature?.properties ?? {};
     const name = String(props.adm_name ?? props.full_adm_name ?? '');
-    const cScore = props.composite_risk_score != null
-      ? Number(props.composite_risk_score).toFixed(1)
-      : props.vulnerability_score != null ? Number(props.vulnerability_score).toFixed(1) : '-';
     
-    const grade = props.composite_risk_grade || (
-      Number(cScore) >= 80 ? '심각' :
-      Number(cScore) >= 60 ? '위험' :
-      Number(cScore) >= 40 ? '주의' :
-      Number(cScore) >= 20 ? '보통' : '양호'
-    );
-
-    const gradeClass =
-      grade === '심각' ? 'vuln-severe' :
-      grade === '위험' ? 'vuln-danger' :
-      grade === '주의' ? 'vuln-warn' :
-      grade === '보통' ? 'vuln-moderate' : 'vuln-safe';
+    // getScoreGradeAndColor 단일 함수로 등급/점수/뱃지 산출
+    const scoreRaw = props.composite_risk_score ?? props.map_score ?? props.vulnerability_score;
+    const { grade, badgeClass, score } = getScoreGradeAndColor(scoreRaw);
+    const cScoreStr = score.toFixed(1);
 
     const pDriver = props.primary_risk_driver || '취약인구 밀집';
     const shelters = props.shelter_count ?? 0;
@@ -439,14 +438,14 @@ export function DaeguShelterMap({
               <b class="dit-name">${escapeHtml(name)}</b>
               <span class="dit-district">${escapeHtml(props.district_name || '')}</span>
             </div>
-            <span class="dit-grade ${gradeClass}">${grade}</span>
+            <span class="dit-grade ${badgeClass}">${grade}</span>
           </div>
           <div class="dit-driver">
             <span class="dit-driver-badge">주요 원인</span>
             <span>${escapeHtml(pDriver)}</span>
           </div>
           <div class="dit-grid">
-            <div class="dit-row"><span>폭염위험지수</span><b class="highlight">${cScore}점</b></div>
+            <div class="dit-row"><span>폭염위험지수</span><b class="highlight">${cScoreStr}점</b></div>
             <div class="dit-row"><span>쉼터 커버리지</span><b>${coverage}</b></div>
             <div class="dit-row"><span>무더위쉼터</span><b>${shelters}곳</b></div>
             <div class="dit-row"><span>고령인구(60+)</span><b>${elderly}</b></div>
@@ -502,7 +501,7 @@ export function DaeguShelterMap({
           maxZoom={20}
         />
 
-        {/* ① 대구 전체 내부 연두색 fill */}
+        {/* ① 대구 전체 내부 배경 */}
         <GeoJSON
           data={cityBoundary as GeoJsonObject}
           pane="daegu-fill"
@@ -510,13 +509,11 @@ export function DaeguShelterMap({
           style={{
             color: 'transparent',
             weight: 0,
-            fill: true,
-            fillColor: '#f3f7e8',
-            fillOpacity: 0.12,
+            fill: false,
           }}
         />
 
-        {/* ② 행정동 경계 — 취약도 색상 fill + 얇은 흰색 경계선 */}
+        {/* ② 행정동 경계 — 5색 히트맵 선명하게 렌더링 */}
         {dongBoundaries && dongBoundaries.features.length > 0 && (
           <GeoJSON
             key={`dongs-${dongBoundaries.features.length}-${String((dongBoundaries.features[0]?.properties as any)?.map_score ?? '')}`}
@@ -524,9 +521,9 @@ export function DaeguShelterMap({
             pane="dong-boundaries"
             style={(feature: any) => ({
               fillColor: getFeatureColor(feature?.properties),
-              fillOpacity: 0.78,
-              color: 'rgba(255,255,255,0.75)',
-              weight: 0.8,
+              fillOpacity: 0.85,
+              color: 'rgba(255,255,255,0.85)',
+              weight: 0.9,
               opacity: 1,
               fill: true,
             })}
