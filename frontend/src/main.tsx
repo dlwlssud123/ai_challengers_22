@@ -115,42 +115,42 @@ function AppShelterMap({
   data,
   selectedDistrict,
   onDistrictClick,
+  onSelect,
   height = '430px',
 }: {
   data: Overview;
   selectedDistrict?: string;
   onDistrictClick?: (name: string) => void;
+  onSelect?: (d: District) => void;
   height?: string;
 }) {
   const hasDistricts = data.district_boundaries?.features?.length > 0;
   const hasCity = data.city_boundary?.features?.length > 0;
 
-  if (!hasDistricts || !hasCity) {
-    // 경계 데이터 없을 때: DaeguShelterMap에 빈 FeatureCollection 대신 최소 dummy 전달
-    // (실제 쉼터 마커는 표시됨)
-    const emptyDistricts: DistrictBoundaryCollection = { type: 'FeatureCollection', features: [] };
-    const emptyCity: CityBoundaryCollection = { type: 'FeatureCollection', features: [] };
-    return (
-      <DaeguShelterMap
-        districtBoundaries={emptyDistricts}
-        cityBoundary={emptyCity}
-        shelters={data.shelters}
-        height={height}
-        selectedDistrict={selectedDistrict}
-        onDistrictClick={onDistrictClick}
-        showLegend={true}
-      />
-    );
-  }
+  // 행정동 클릭 시 district 이름으로 구·군 하이라이트 + District 객체 선택
+  const handleDongClick = React.useCallback((props: Record<string, unknown>) => {
+    const districtName = props.district_name as string | undefined;
+    if (districtName && onDistrictClick) onDistrictClick(districtName);
+    if (onSelect) {
+      const adm_cd = props.sgis_adm_cd as string | undefined;
+      const match = data.districts.find(d => d.sgis_adm_cd === adm_cd);
+      if (match) onSelect(match);
+    }
+  }, [data.districts, onDistrictClick, onSelect]);
+
+  const emptyDistricts: DistrictBoundaryCollection = { type: 'FeatureCollection', features: [] };
+  const emptyCity: CityBoundaryCollection = { type: 'FeatureCollection', features: [] };
 
   return (
     <DaeguShelterMap
-      districtBoundaries={data.district_boundaries}
-      cityBoundary={data.city_boundary}
+      districtBoundaries={hasDistricts ? data.district_boundaries : emptyDistricts}
+      cityBoundary={hasCity ? data.city_boundary : emptyCity}
       shelters={data.shelters}
+      dongBoundaries={data.boundaries.features.length > 0 ? data.boundaries as any : undefined}
       height={height}
       selectedDistrict={selectedDistrict}
       onDistrictClick={onDistrictClick}
+      onDongClick={handleDongClick}
       showLegend={true}
     />
   );
@@ -224,7 +224,7 @@ function DashboardPage({
           </div>
           <div className="map-body" style={{ minHeight: 430 }}>
             <div className="map-stage" style={{ minHeight: 430, padding: 0 }}>
-              <AppShelterMap data={data} selectedDistrict={selectedDistrict} onDistrictClick={onDistrictClick} height="430px" />
+              <AppShelterMap data={data} selectedDistrict={selectedDistrict} onDistrictClick={onDistrictClick} onSelect={onSelect} height="430px" />
             </div>
           </div>
         </section>
@@ -323,7 +323,7 @@ function RiskPage({ data, selectedDistrict, onDistrictClick, onSelect }: {
           </div>
           <div className="map-body" style={{ minHeight: 515 }}>
             <div className="map-stage" style={{ minHeight: 515, padding: 0 }}>
-              <AppShelterMap data={data} selectedDistrict={selectedDistrict} onDistrictClick={onDistrictClick} height="515px" />
+              <AppShelterMap data={data} selectedDistrict={selectedDistrict} onDistrictClick={onDistrictClick} onSelect={onSelect} height="515px" />
             </div>
           </div>
         </section>
@@ -392,7 +392,7 @@ function AccessPage({ data, selectedDistrict, onDistrictClick, onSelect }: {
           <div className="card-header"><div className="card-title">대구광역시 접근성 분석 지도 <span className="info-dot">i</span></div></div>
           <div className="map-body" style={{ minHeight: 510 }}>
             <div className="map-stage" style={{ minHeight: 510, padding: 0 }}>
-              <AppShelterMap data={data} selectedDistrict={selectedDistrict} onDistrictClick={onDistrictClick} height="510px" />
+              <AppShelterMap data={data} selectedDistrict={selectedDistrict} onDistrictClick={onDistrictClick} onSelect={onSelect} height="510px" />
             </div>
           </div>
         </section>

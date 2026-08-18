@@ -48,6 +48,8 @@ export type DaeguShelterMapProps = {
   districtBoundaries: DistrictBoundaryCollection;
   cityBoundary: CityBoundaryCollection;
   shelters: Shelter[];
+  /** 행정동 단위 GeoJSON — properties에 fill_color(number[]) 포함 */
+  dongBoundaries?: FeatureCollection;
   height?: string;
   initialCenter?: [number, number];
   initialZoom?: number;
@@ -57,10 +59,13 @@ export type DaeguShelterMapProps = {
   showLegend?: boolean;
   onDistrictClick?: (districtName: string) => void;
   onShelterClick?: (shelter: Shelter) => void;
+  /** 행정동 클릭 시 해당 feature.properties 전달 */
+  onDongClick?: (properties: Record<string, unknown>) => void;
 };
 
 const PANE_Z_INDEX = {
   cityFill: 310,
+  dongBoundaries: 320,
   shelterRadii: 350,
   districtBoundaries: 450,
   cityBoundary: 460,
@@ -81,6 +86,12 @@ function escapeHtml(value: unknown) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function colorToRgba(color: unknown): string {
+  if (!Array.isArray(color) || color.length < 3) return 'rgba(100,116,139,0.45)';
+  const [r, g, b, a = 200] = color as number[];
+  return `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
 }
 
 function createShelterPopup(shelter: Shelter) {
@@ -286,6 +297,7 @@ export function DaeguShelterMap({
   districtBoundaries,
   cityBoundary,
   shelters,
+  dongBoundaries,
   height = '680px',
   initialCenter = DEFAULT_CENTER,
   initialZoom = DEFAULT_ZOOM,
@@ -295,6 +307,7 @@ export function DaeguShelterMap({
   showLegend = true,
   onDistrictClick,
   onShelterClick,
+  onDongClick,
 }: DaeguShelterMapProps) {
   const viewport = React.useMemo(
     () => readViewport(storageKey, initialCenter, initialZoom),
@@ -309,6 +322,19 @@ export function DaeguShelterMap({
     const districtName = String(feature?.properties?.district_name ?? '');
     if (districtName && onDistrictClick) layer.on('click', () => onDistrictClick(districtName));
   }, [onDistrictClick]);
+  const onEachDong = React.useCallback((feature: any, layer: L.Layer) => {
+    const name = String(feature?.properties?.adm_name ?? feature?.properties?.full_adm_name ?? '');
+    if (name) {
+      layer.bindTooltip(escapeHtml(name), {
+        direction: 'top',
+        sticky: true,
+        className: 'portable-shelter-tooltip',
+      });
+    }
+    if (onDongClick) {
+      layer.on('click', () => onDongClick(feature?.properties ?? {}));
+    }
+  }, [onDongClick]);
 
   return (
     <section
@@ -326,14 +352,15 @@ export function DaeguShelterMap({
         touchZoom
         preferCanvas
       >
-        <Pane name="daegu-fill" style={{ zIndex: PANE_Z_INDEX.cityFill }} />
-        <Pane name="shelter-radii" style={{ zIndex: PANE_Z_INDEX.shelterRadii }} />
+        <Pane name="daegu-fill"         style={{ zIndex: PANE_Z_INDEX.cityFill }} />
+        <Pane name="dong-boundaries"    style={{ zIndex: PANE_Z_INDEX.dongBoundaries }} />
+        <Pane name="shelter-radii"      style={{ zIndex: PANE_Z_INDEX.shelterRadii }} />
         <Pane name="district-boundaries" style={{ zIndex: PANE_Z_INDEX.districtBoundaries }} />
-        <Pane name="city-boundary" style={{ zIndex: PANE_Z_INDEX.cityBoundary }} />
-        <Pane name="selected-radius" style={{ zIndex: PANE_Z_INDEX.selectedRadius }} />
-        <Pane name="shelter-clusters" style={{ zIndex: PANE_Z_INDEX.shelterClusters }} />
-        <Pane name="shelter-markers" style={{ zIndex: PANE_Z_INDEX.shelterMarkers }} />
-        <Pane name="district-labels" style={{ zIndex: PANE_Z_INDEX.districtLabels }} />
+        <Pane name="city-boundary"      style={{ zIndex: PANE_Z_INDEX.cityBoundary }} />
+        <Pane name="selected-radius"    style={{ zIndex: PANE_Z_INDEX.selectedRadius }} />
+        <Pane name="shelter-clusters"   style={{ zIndex: PANE_Z_INDEX.shelterClusters }} />
+        <Pane name="shelter-markers"    style={{ zIndex: PANE_Z_INDEX.shelterMarkers }} />
+        <Pane name="district-labels"    style={{ zIndex: PANE_Z_INDEX.districtLabels }} />
 
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -342,6 +369,7 @@ export function DaeguShelterMap({
           maxZoom={20}
         />
 
+        {/* ① 대구 전체 내부 연두색 fill */}
         <GeoJSON
           data={cityBoundary as GeoJsonObject}
           pane="daegu-fill"
@@ -354,26 +382,52 @@ export function DaeguShelterMap({
             fillOpacity: 0.28,
           }}
         />
+
+        {/* ② 행정동 경계 — 취약도 색상 fill + 얇은 흰색 경계선 */}
+        {dongBoundaries && dongBoundaries.features.length > 0 && (
+          <GeoJSON
+            key={`dongs-${dongBoundaries.features.length}`}
+            data={dongBoundaries as GeoJsonObject}
+            pane="dong-boundaries"
+            style={(feature: any) => ({
+              fillColor: colorToRgba(feature?.properties?.fill_color),
+              fillOpacity: 0.72,
+              color: 'rgba(255,255,255,0.75)',
+              weight: 0.8,
+              opacity: 1,
+              fill: true,
+            })}
+            onEachFeature={onEachDong}
+          />
+        )}
+
         <ShelterRadiusLayer shelters={shelters} />
+
+        {/* ③ 구·군 경계 — fill 없음, 두꺼운 실선 */}
         <GeoJSON
           key={`districts-${selectedDistrict ?? 'none'}`}
           data={districtBoundaries as GeoJsonObject}
           pane="district-boundaries"
-          style={(feature) => ({
-            color: selectedDistrict === feature?.properties?.district_name ? '#26313a' : '#35414a',
-            weight: selectedDistrict === feature?.properties?.district_name ? 1.8 : 1.5,
-            opacity: 0.9,
-            fill: true,
-            fillColor: 'transparent',
-            fillOpacity: 0,
-          })}
+          style={(feature: any) => {
+            const isSelected = selectedDistrict === feature?.properties?.district_name;
+            return {
+              color: isSelected ? '#1a3040' : '#2c4455',
+              weight: isSelected ? 4.0 : 2.8,
+              opacity: isSelected ? 1 : 0.92,
+              dashArray: isSelected ? undefined : '7 3',
+              fill: false,
+              fillOpacity: 0,
+            };
+          }}
           onEachFeature={onEachDistrict}
         />
+
+        {/* ④ 대구 외곽선 — 가장 두꺼운 실선 */}
         <GeoJSON
           data={cityBoundary as GeoJsonObject}
           pane="city-boundary"
           interactive={false}
-          style={{ color: '#26313a', weight: 3.6, opacity: 0.98, fill: false }}
+          style={{ color: '#0f1f2c', weight: 4.8, opacity: 1, fill: false }}
         />
         <ShelterClusterLayer shelters={shelters} onSelect={selectShelter} />
         <DistrictLabels districts={districtBoundaries} offsets={labelOffsets} />
@@ -401,6 +455,10 @@ export function DaeguShelterMap({
           <b>지도 범례</b>
           <span><i className="portable-legend-city" />대구 전체 외곽선</span>
           <span><i className="portable-legend-district" />9개 구·군 경계</span>
+          <span><i className="portable-legend-dong" />행정동 경계 (취약도)</span>
+          <span><i className="portable-legend-vuln-high" />취약도 높음</span>
+          <span><i className="portable-legend-vuln-mid" />취약도 보통</span>
+          <span><i className="portable-legend-vuln-low" />취약도 낮음</span>
           <span><i className="portable-legend-radius" />쉼터 500m 반경</span>
           <span><i className="portable-legend-cluster" />쉼터 군집</span>
         </div>

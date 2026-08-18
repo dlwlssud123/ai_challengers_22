@@ -189,12 +189,15 @@
 .portable-map-legend b { color: #dce5eb; }
 .portable-map-legend span { display: flex; align-items: center; gap: 7px; }
 .portable-map-legend i { display: inline-block; flex: 0 0 auto; }
-.portable-legend-city,
-.portable-legend-district { width: 18px; height: 0; }
-.portable-legend-city     { border-top: 3.6px solid #c8d5de; }
-.portable-legend-district { border-top: 1.5px solid #8299a8; border-style: dashed; }
-.portable-legend-radius   { width: 15px; height: 15px; border: 1px solid #43c8cc; border-radius: 50%; background: rgba(67,200,204,.08); }
-.portable-legend-cluster  { width: 15px; height: 15px; border: 1px solid #ff8b24; border-radius: 50%; background: rgba(255,90,43,.65); }
+.portable-legend-city, .portable-legend-district { width: 18px; height: 0; }
+.portable-legend-city     { border-top: 4.8px solid #0f1f2c; }
+.portable-legend-district { border-top: 2.8px solid #2c4455; border-style: dashed; }
+.portable-legend-dong     { width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.5); background: rgba(220,38,38,0.55); border-radius: 2px; }
+.portable-legend-vuln-high { width: 14px; height: 10px; background: rgba(220,38,38,0.72); border-radius: 2px; }
+.portable-legend-vuln-mid  { width: 14px; height: 10px; background: rgba(250,204,21,0.72); border-radius: 2px; }
+.portable-legend-vuln-low  { width: 14px; height: 10px; background: rgba(44,123,182,0.72); border-radius: 2px; }
+.portable-legend-radius   { width: 15px; height: 15px; border: 1px solid #43c8cc; border-radius: 50%; }
+.portable-legend-cluster  { width: 15px; height: 15px; border: 1px solid #da9200; border-radius: 50%; background: rgba(255, 190, 0, 0.74); }
 
 @media (max-width: 640px) {
   .portable-district-label span { font-size: 12px; }
