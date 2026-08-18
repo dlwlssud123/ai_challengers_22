@@ -8,10 +8,10 @@ __pycache__/
 .coverage
 tmp/
 # Data policy: keep only small runtime fixtures and final app-ready outputs.
-data/cache/*
-!data/cache/safetydata_daegu_heat_shelters.json
+data/cache/
 data/processed/*
 !data/processed/daegu_all_dong_accessibility_summary.csv
+!data/processed/shelters.geojson
 data/_census_reqdoc_*/
 data/_grid_border_grid_*/
 heatwave-project (4)/

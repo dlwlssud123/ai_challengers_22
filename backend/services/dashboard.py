@@ -49,8 +49,14 @@ def load_boundaries() -> dict:
 
 @lru_cache(maxsize=1)
 def load_shelters() -> list[dict[str, Any]]:
-    source = build_source_dataset(Settings.from_env())
-    shelters = source.citywide_shelters.to_crs("EPSG:4326")
+    processed_shelters = PROCESSED_DIR / "shelters.geojson"
+    if processed_shelters.exists():
+        import geopandas as gpd
+
+        shelters = gpd.read_file(processed_shelters).to_crs("EPSG:4326")
+    else:
+        source = build_source_dataset(Settings.from_env())
+        shelters = source.citywide_shelters.to_crs("EPSG:4326")
     frame = pd.DataFrame(shelters.drop(columns="geometry", errors="ignore"))
     frame["longitude"] = shelters.geometry.x
     frame["latitude"] = shelters.geometry.y

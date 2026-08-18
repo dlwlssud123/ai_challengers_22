@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import json
-
+import geopandas as gpd
 import requests
 
-from src.config import CACHE_DIR, Settings
+from src.config import PROCESSED_DIR, Settings
 from src.data.http import DataSourceError, request_json
-from src.data.safety_shelters import normalize_safety_shelters
 from src.pipeline import run_analysis
 
 
-def test_cached_api_shelter_data_normalizes_and_drops_sensitive_columns():
-    payload = json.loads((CACHE_DIR / "safetydata_daegu_heat_shelters.json").read_text(encoding="utf-8"))
-    shelters = normalize_safety_shelters(payload.get("payload", payload))
+def test_processed_shelter_data_is_runtime_ready():
+    shelters = gpd.read_file(PROCESSED_DIR / "shelters.geojson")
     assert len(shelters) > 0
     assert shelters.crs.to_epsg() == 4326
     assert "담당자" not in shelters.columns
