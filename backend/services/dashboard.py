@@ -15,6 +15,8 @@ from src.data.shades import load_shades as load_shade_layer
 from src.sgis_client import SGISClient
 
 SUMMARY_CSV = PROCESSED_DIR / "daegu_all_dong_accessibility_summary.csv"
+FUTURE_RISK_CSV = PROCESSED_DIR / "daegu_future_heat_illness_risk_2030.csv"
+FACILITY_SHORTAGE_CSV = PROCESSED_DIR / "daegu_response_facility_shortage_by_admin_dong_2026-08-18.csv"
 
 
 def normalize_name(value: Any) -> str:
@@ -39,6 +41,80 @@ def load_summary_records() -> list[dict[str, Any]]:
     frame = pd.read_csv(get_summary_csv_path(), encoding="utf-8-sig")
     frame = frame.replace({np.nan: None})
     return frame.to_dict("records")
+
+
+@lru_cache(maxsize=1)
+def load_future_risk_records() -> dict[str, dict[str, Any]]:
+    if not FUTURE_RISK_CSV.exists():
+        return {}
+    frame = pd.read_csv(FUTURE_RISK_CSV, encoding="utf-8-sig")
+    frame = frame.replace({np.nan: None})
+    records: dict[str, dict[str, Any]] = {}
+    for row in frame.to_dict("records"):
+        code = str(row.get("행정동코드") or "").replace(".0", "")
+        if not code:
+            continue
+        records[code] = {
+            "future_heat_rank": row.get("발생률순위"),
+            "future_heat_incidence_per_10k": row.get("미래 발생률(/1만명)"),
+            "future_heat_risk_score": row.get("위험지수"),
+            "future_heat_risk_grade": row.get("위험등급"),
+            "future_expected_patients": row.get("예상환자수(명)"),
+            "future_risk_confidence": row.get("신뢰도"),
+            "future_risk_confidence_grade": row.get("신뢰등급"),
+            "future_main_driver_1": row.get("주동인1"),
+            "future_driver_contribution_1": row.get("기여도1"),
+            "future_main_driver_2": row.get("주동인2"),
+            "future_driver_contribution_2": row.get("기여도2"),
+            "future_max_heat_index_c": row.get("최고 열지수 대체치(℃)"),
+            "future_heatwave_days": row.get("폭염일수"),
+            "future_strong_heatwave_days": row.get("강한폭염일수"),
+            "future_tropical_night_days": row.get("열대야일수"),
+            "future_max_heat_streak_days": row.get("최대연속폭염일"),
+            "future_cumulative_heat_burden": row.get("누적열부담"),
+            "future_climate_unit": row.get("RDA 기후단위"),
+            "future_substitution_note": row.get("대체처리 요약"),
+        }
+    return records
+
+
+@lru_cache(maxsize=1)
+def load_facility_shortage_records() -> dict[str, dict[str, Any]]:
+    if not FACILITY_SHORTAGE_CSV.exists():
+        return {}
+    frame = pd.read_csv(FACILITY_SHORTAGE_CSV, encoding="utf-8-sig")
+    frame = frame.replace({np.nan: None})
+    records: dict[str, dict[str, Any]] = {}
+    for row in frame.to_dict("records"):
+        code = str(row.get("행정동코드") or "").replace(".0", "")
+        if not code:
+            continue
+        records[code] = {
+            "facility_shortage_rank": row.get("대응시설부족도순위"),
+            "future_heat_risk_from_shortage": row.get("미래온열질환위험"),
+            "local_vulnerability_from_shortage": row.get("지역취약도"),
+            "protection_need_score": row.get("보호필요도"),
+            "facility_response_score": row.get("시설대응력"),
+            "facility_gap_score": row.get("시설대응력부족분(100-시설대응력)"),
+            "facility_shortage_score": row.get("대응시설부족도"),
+            "facility_model_note": row.get("시설대응력종합모형"),
+            "shade_data_status": row.get("그늘막자료상태"),
+            "facility_warning_note": row.get("시설대응력대체처리·주의"),
+        }
+    return records
+
+
+def enrich_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    future_records = load_future_risk_records()
+    facility_records = load_facility_shortage_records()
+    enriched = []
+    for record in records:
+        code = str(record.get("resident_adm_code") or "").replace(".0", "")
+        merged = dict(record)
+        merged.update(future_records.get(code, {}))
+        merged.update(facility_records.get(code, {}))
+        enriched.append(merged)
+    return enriched
 
 
 @lru_cache(maxsize=1)
@@ -152,6 +228,8 @@ def find_record(records: list[dict[str, Any]], full_name: str) -> dict[str, Any]
 
 def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
     source = load_boundaries()
+    future_records = load_future_risk_records()
+    facility_records = load_facility_shortage_records()
     features = []
     for feature in source.get("features", []):
         props = dict(feature.get("properties") or {})
@@ -164,7 +242,16 @@ def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
             if access_lack is None:
                 access_lack = record.get("grid_accessibility_lack_score")
             priority = record.get("priority_score_existing_pipeline")
-            map_score = access_index if metric == "accessibility" else priority
+            code = str(record.get("resident_adm_code") or "").replace(".0", "")
+            future = future_records.get(code, {})
+            facility = facility_records.get(code, {})
+            future_score = future.get("future_heat_risk_score")
+            if metric == "accessibility":
+                map_score = access_index
+            elif metric == "future-risk":
+                map_score = future_score
+            else:
+                map_score = priority
             props.update(
                 {
                     "sgis_adm_cd": record.get("sgis_adm_cd"),
@@ -189,7 +276,9 @@ def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
                     "priority_score": priority,
                     "vulnerability_score": record.get("vulnerability_score"),
                     "heat_score": record.get("heat_score"),
-                    "fill_color": access_color(access_index) if metric == "accessibility" else score_color(priority),
+                    **future,
+                    **facility,
+                    "fill_color": access_color(access_index) if metric == "accessibility" else score_color(future_score) if metric == "future-risk" else score_color(priority),
                     "line_color": [255, 255, 255, 220],
                     "map_score": map_score,
                 }
@@ -212,11 +301,13 @@ def build_kpis(records: list[dict[str, Any]], shelters: list[dict[str, Any]], sh
         "shade_count": int(len(shades)),
         "mean_grid_accessibility": float(pd.to_numeric(frame["grid_population_weighted_accessibility_index"], errors="coerce").mean()),
         "mean_green_ratio": float(pd.to_numeric(frame["green_ratio_percent"], errors="coerce").mean()),
+        "mean_future_heat_risk": float(pd.to_numeric(pd.Series([row.get("future_heat_risk_score") for row in load_future_risk_records().values()]), errors="coerce").mean()) if load_future_risk_records() else 0.0,
+        "future_expected_patients": float(pd.to_numeric(pd.Series([row.get("future_expected_patients") for row in load_future_risk_records().values()]), errors="coerce").sum()) if load_future_risk_records() else 0.0,
     }
 
 
 def build_overview(metric: str = "vulnerability") -> dict:
-    records = load_summary_records()
+    records = enrich_records(load_summary_records())
     shelters = load_shelters()
     shades = load_shades()
     # district_boundaries / city_boundary 로딩 실패 시 빈 FeatureCollection으로 대체

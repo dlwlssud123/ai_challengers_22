@@ -4,8 +4,8 @@ import { DaeguShelterMap, type DistrictBoundaryCollection, type CityBoundaryColl
 import './styles.css';
 
 // ── Types ──────────────────────────────────────────
-type MetricMode = 'vulnerability' | 'accessibility';
-type PageKey = 'dashboard' | 'risk' | 'access' | 'recommend' | 'briefing';
+type MetricMode = 'vulnerability' | 'accessibility' | 'future-risk';
+type PageKey = 'dashboard' | 'risk' | 'access' | 'future' | 'recommend' | 'briefing';
 
 type Kpis = {
   dong_count: number;
@@ -15,6 +15,8 @@ type Kpis = {
   shade_count: number;
   mean_grid_accessibility: number;
   mean_green_ratio: number;
+  mean_future_heat_risk: number;
+  future_expected_patients: number;
 };
 
 type District = {
@@ -35,6 +37,24 @@ type District = {
   priority_score_existing_pipeline: number;
   vulnerability_score: number;
   heat_score: number;
+  future_heat_incidence_per_10k?: number;
+  future_heat_risk_score?: number;
+  future_heat_risk_grade?: string;
+  future_expected_patients?: number;
+  future_risk_confidence?: number;
+  future_risk_confidence_grade?: string;
+  future_main_driver_1?: string;
+  future_driver_contribution_1?: number;
+  future_main_driver_2?: string;
+  future_driver_contribution_2?: number;
+  future_max_heat_index_c?: number;
+  future_heatwave_days?: number;
+  future_tropical_night_days?: number;
+  future_max_heat_streak_days?: number;
+  facility_response_score?: number;
+  facility_gap_score?: number;
+  facility_shortage_score?: number;
+  protection_need_score?: number;
 };
 
 type Feature = {
@@ -90,6 +110,15 @@ const api = {
       body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error('AI 브리핑을 생성하지 못했습니다.');
+    return res.json();
+  },
+  async mlScenario(payload: { sgis_adm_cd: string; facility_counts: Record<string, number> }) {
+    const res = await fetch('/api/ml-scenario', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('ML 시나리오를 계산하지 못했습니다.');
     return res.json();
   }
 };
@@ -437,6 +466,124 @@ function AccessPage({ data, selectedDistrict, onDistrictClick, onSelect }: {
   );
 }
 
+
+function FutureRiskPage({ data, selectedDistrict, selected, onDistrictClick, onSelect }: {
+  data: Overview; selectedDistrict?: string; selected?: District; onDistrictClick: (n: string) => void; onSelect: (d: District) => void;
+}) {
+  const top5 = [...data.districts]
+    .sort((a, b) => Number(b.future_expected_patients || 0) - Number(a.future_expected_patients || 0))
+    .slice(0, 5);
+  const target = selected || top5[0];
+  const maxPatients = Math.max(1, ...data.districts.map(d => Number(d.future_expected_patients || 0)));
+  const [counts, setCounts] = React.useState({ cooling_support: 0, shade: 1, cooling_fog: 0, smart_shelter: 0 });
+  const [scenario, setScenario] = React.useState<any | null>(null);
+  const [loadingScenario, setLoadingScenario] = React.useState(false);
+
+  const updateCount = (key: keyof typeof counts, value: number) => {
+    setCounts(prev => ({ ...prev, [key]: Math.max(0, Math.min(20, Number(value) || 0)) }));
+  };
+
+  const runScenario = React.useCallback(async () => {
+    if (!target) return;
+    setLoadingScenario(true);
+    try {
+      const result = await api.mlScenario({ sgis_adm_cd: target.sgis_adm_cd, facility_counts: counts });
+      setScenario(result);
+    } finally {
+      setLoadingScenario(false);
+    }
+  }, [target?.sgis_adm_cd, counts.cooling_support, counts.shade, counts.cooling_fog, counts.smart_shelter]);
+
+  React.useEffect(() => { setScenario(null); }, [target?.sgis_adm_cd]);
+
+  return (
+    <div className="page">
+      <PageHeader title="2030 온열질환 예측" subtitle="현재 취약도, 미래 기후지표, 인구, 시설대응력을 결합해 행정동별 미래 위험을 비교합니다" />
+      <div className="kpi-grid">
+        <KpiCard icon="📈" label="2030 예상환자수" value={<>{fmtScore(data.kpis.future_expected_patients)}<small>명</small></>} note="전체 행정동 합계" />
+        <KpiCard icon="🔥" label="평균 미래 위험지수" value={fmtScore(data.kpis.mean_future_heat_risk)} note="기존 미래 위험 모델 결과" />
+        <KpiCard icon="🏙️" label="최고 위험 행정동" value={top5[0]?.adm_name || '-'} note={`${fmtScore(top5[0]?.future_expected_patients)}명 예상`} />
+        <KpiCard icon="🧠" label="회귀 모델" value="GBR" note="시설 투입 시나리오 추정" />
+      </div>
+      <div className="dashboard-main">
+        <section className="card map-card">
+          <div className="card-header">
+            <div className="card-title">미래 온열질환 위험 지도 <span className="info-dot">i</span></div>
+            <span style={{ fontSize: 12, color: '#8496a4' }}>행정동 클릭 → 예측 상세</span>
+          </div>
+          <div className="map-body" style={{ minHeight: 515 }}>
+            <div className="map-stage" style={{ minHeight: 515, padding: 0 }}>
+              <AppShelterMap data={data} selectedDistrict={selectedDistrict} onDistrictClick={onDistrictClick} onSelect={onSelect} height="515px" />
+            </div>
+          </div>
+        </section>
+        <div className="dashboard-side">
+          <section className="card">
+            <div className="card-header"><div className="card-title">선택 행정동 2030 예측</div></div>
+            {target ? (
+              <div style={{ padding: '0 16px 16px', display: 'grid', gap: 12 }}>
+                <div className="selected-item"><span className="candidate-badge">2030</span><b>{target.full_adm_name || `${target.district_name} ${target.adm_name}`}</b></div>
+                <div className="metric-four" style={{ padding: 0 }}>
+                  <div className="metric-box"><div className="m-icon">👥</div><div><span>예상환자수</span><b>{fmtScore(target.future_expected_patients)}명</b></div></div>
+                  <div className="metric-box"><div className="m-icon">📊</div><div><span>발생률</span><b>{fmtScore(target.future_heat_incidence_per_10k)}/1만명</b></div></div>
+                  <div className="metric-box"><div className="m-icon">🔥</div><div><span>위험지수</span><b>{fmtScore(target.future_heat_risk_score)}</b></div></div>
+                  <div className="metric-box"><div className="m-icon">✅</div><div><span>신뢰도</span><b>{fmtScore(target.future_risk_confidence)}</b></div></div>
+                </div>
+                <div style={{ fontSize: 12, color: '#a9bac7', lineHeight: 1.75 }}>
+                  주동인 1: <b style={{ color: 'var(--orange-2)' }}>{target.future_main_driver_1 || '-'}</b><br />
+                  주동인 2: <b style={{ color: 'var(--orange-2)' }}>{target.future_main_driver_2 || '-'}</b><br />
+                  폭염일수 {fmtScore(target.future_heatwave_days)}일 · 열대야 {fmtScore(target.future_tropical_night_days)}일
+                </div>
+              </div>
+            ) : <div style={{ padding: 16, color: 'var(--muted)' }}>행정동을 선택하세요.</div>}
+          </section>
+          <section className="card">
+            <div className="card-header"><div className="card-title">시설 투입 회귀 시나리오</div></div>
+            <div style={{ padding: '0 16px 16px', display: 'grid', gap: 10 }}>
+              {[
+                ['cooling_support','냉방 지원','200만원'],
+                ['shade','그늘막','1,000만원'],
+                ['cooling_fog','쿨링포그','2,000만원'],
+                ['smart_shelter','스마트쉼터','4,000만원'],
+              ].map(([key, label, cost]) => (
+                <label key={key} style={{ display: 'grid', gridTemplateColumns: '1fr 82px', gap: 8, alignItems: 'center', fontSize: 12, color: '#aebdca' }}>
+                  <span><b style={{ color: '#dfe6ec' }}>{label}</b><br /><small>{cost}/개</small></span>
+                  <input className="text-field" type="number" min="0" max="20" value={(counts as any)[key]} onChange={e => updateCount(key as keyof typeof counts, Number(e.target.value))} />
+                </label>
+              ))}
+              <button className="primary-button full" onClick={runScenario} disabled={loadingScenario || !target}>{loadingScenario ? '계산 중...' : '예상 감소량 계산'}</button>
+              {scenario?.status === 'success' && (
+                <div className="result-summary" style={{ gridTemplateColumns: '1fr', padding: 0, border: 0 }}>
+                  <div className="metric-four" style={{ padding: 0 }}>
+                    <div className="metric-box"><div className="m-icon">↓</div><div><span>감소 환자</span><b>{fmtScore(scenario.scenario.reduced_patients)}명</b></div></div>
+                    <div className="metric-box"><div className="m-icon">%</div><div><span>감소율</span><b>{fmtScore(scenario.scenario.reduction_rate * 100)}%</b></div></div>
+                    <div className="metric-box"><div className="m-icon">₩</div><div><span>총비용</span><b>{fmtNumber(scenario.total_cost)}원</b></div></div>
+                    <div className="metric-box"><div className="m-icon">±</div><div><span>CV MAE</span><b>{fmtScore(scenario.model.cv_mae)}</b></div></div>
+                  </div>
+                  <div style={{ color: '#7f92a2', fontSize: 11, lineHeight: 1.55 }}>{scenario.model.note}</div>
+                </div>
+              )}
+            </div>
+          </section>
+          <section className="card">
+            <div className="card-header"><div className="card-title">예상환자수 TOP 5</div></div>
+            <div className="rank-list">
+              {top5.map((d, i) => (
+                <div className="rank-row" key={d.sgis_adm_cd} style={{ gridTemplateColumns: '26px 1fr 1.5fr 42px', cursor: 'pointer' }} onClick={() => onSelect(d)}>
+                  <div className="rank-num">{i + 1}</div>
+                  <b style={{ fontSize: 11 }}>{d.adm_name}</b>
+                  <MiniBar value={Number(d.future_expected_patients || 0)} max={maxPatients} />
+                  <span style={{ fontSize: 10 }}>{fmtScore(d.future_expected_patients)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AllocationPage({
   budget, setBudget, unitCost, setUnitCost, maxFacilities, setMaxFacilities, allocation
 }: {
@@ -636,6 +783,7 @@ const NAV_ITEMS: { key: PageKey; icon: string; label: string }[] = [
   { key: 'dashboard', icon: '🏠', label: '대시보드' },
   { key: 'risk',      icon: '🗺️', label: '폭염 취약도 지도' },
   { key: 'access',   icon: '🚶', label: '접근성 분석' },
+  { key: 'future',   icon: '📈', label: '2030 예측' },
   { key: 'recommend',icon: '📌', label: '예산 배분' },
   { key: 'briefing', icon: '📄', label: 'AI 정책 브리핑' },
 ];
@@ -657,7 +805,10 @@ function App() {
   React.useEffect(() => {
     api.overview(metric).then(next => {
       setOverview(next);
-      setSelected(curr => curr || next.districts[0]);
+      setSelected(curr => {
+        const code = curr?.sgis_adm_cd;
+        return (code && next.districts.find(d => d.sgis_adm_cd === code)) || next.districts[0];
+      });
     }).catch(console.error);
   }, [metric]);
 
@@ -698,6 +849,7 @@ function App() {
       case 'dashboard': return <DashboardPage data={overview} selectedDistrict={selectedDistrict} selected={selected ?? undefined} onDistrictClick={handleDistrictClick} onSelect={setSelected} />;
       case 'risk':      return <RiskPage data={overview} selectedDistrict={selectedDistrict} onDistrictClick={handleDistrictClick} onSelect={setSelected} />;
       case 'access':    return <AccessPage data={overview} selectedDistrict={selectedDistrict} onDistrictClick={handleDistrictClick} onSelect={setSelected} />;
+      case 'future':    return <FutureRiskPage data={overview} selectedDistrict={selectedDistrict} selected={selected ?? undefined} onDistrictClick={handleDistrictClick} onSelect={setSelected} />;
       case 'recommend': return <AllocationPage data={overview} budget={budget} setBudget={setBudget} unitCost={unitCost} setUnitCost={setUnitCost} maxFacilities={maxFacilities} setMaxFacilities={setMaxFacilities} allocation={allocation} />;
       case 'briefing':  return <BriefingPage selected={selected ?? undefined} budget={budget} maxFacilities={maxFacilities} briefing={briefing} loadingBrief={loadingBrief} onRun={runBriefing} />;
       default: return null;
@@ -714,7 +866,12 @@ function App() {
             <button
               key={item.key}
               className={`nav-item${page === item.key ? ' active' : ''}`}
-              onClick={() => setPage(item.key)}
+              onClick={() => {
+                setPage(item.key);
+                if (item.key === 'risk') setMetric('vulnerability');
+                if (item.key === 'access') setMetric('accessibility');
+                if (item.key === 'future') setMetric('future-risk');
+              }}
             >
               <span className="nav-icon">{item.icon}</span>
               <span>{item.label}</span>
@@ -742,8 +899,8 @@ function App() {
             </button>
           </div>
           <div className="top-right">
-            <button className="outline-button" onClick={() => setMetric(m => m === 'vulnerability' ? 'accessibility' : 'vulnerability')}>
-              🔄 {metric === 'vulnerability' ? '취약도' : '격자 접근성'}
+            <button className="outline-button" onClick={() => setMetric(m => m === 'vulnerability' ? 'accessibility' : m === 'accessibility' ? 'future-risk' : 'vulnerability')}>
+              🔄 {metric === 'vulnerability' ? '현재 취약도' : metric === 'accessibility' ? '쉼터 접근성' : '미래 위험'}
             </button>
             <a className="outline-button" href="/api/download/dong-summary.csv" style={{ textDecoration: 'none' }}>
               ⬇️ CSV 다운로드

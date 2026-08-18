@@ -10,6 +10,7 @@ from backend.services.dashboard import (
     build_overview,
     get_summary_csv_path,
 )
+from backend.services.ml_prediction import build_ml_scenario
 
 app = FastAPI(title="temperAIture API", version="1.0.0")
 app.add_middleware(
@@ -39,6 +40,11 @@ def allocation(payload: dict) -> dict:
 @app.post("/api/ai-briefing")
 def ai_briefing(payload: dict) -> dict:
     return build_ai_briefing(payload)
+
+
+@app.post("/api/ml-scenario")
+def ml_scenario(payload: dict) -> dict:
+    return build_ml_scenario(payload)
 
 
 @app.get("/api/download/dong-summary.csv")
