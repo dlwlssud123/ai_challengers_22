@@ -9,8 +9,10 @@ import geopandas as gpd
 import pandas as pd
 
 from src.config import CACHE_DIR, RAW_DIR, Settings
+from src.data.geocoding import SGISAddressGeocoder
 from src.data.heat_facilities import load_local_shades
 from src.data.http import DataSourceError, JsonCache, build_session, request_json
+from src.sgis_client import SGISClient, SGISClientError
 
 STANDARD_SHADE_API_URL = "https://api.data.go.kr/openapi/tn_pubr_public_shade_canopy_api"
 SEOGU_SHADE_API_URL = "http://apis.data.go.kr/3430000/shadeInstallationService/getShadeInstallation"
@@ -128,7 +130,12 @@ def load_shades(settings: Settings | None = None, path: Path | None = None) -> g
                 result.attrs["source_mode"] = "cache"
                 result.attrs["warnings"] = [str(api_error)]
                 return result.drop_duplicates(subset=["name", "latitude", "longitude"]).reset_index(drop=True)
-        result = load_local_shades(path)
+        geocoder = None
+        try:
+            geocoder = SGISAddressGeocoder(SGISClient(timeout=settings.api_timeout_seconds), JsonCache(CACHE_DIR))
+        except SGISClientError:
+            geocoder = None
+        result = load_local_shades(path, geocoder=geocoder)
         result.attrs["source_mode"] = "local_file"
         result.attrs["warnings"] = [str(api_error)]
         return result

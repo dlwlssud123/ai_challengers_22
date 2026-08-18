@@ -146,7 +146,26 @@ def load_local_heat_shelters(path: Path | None = None) -> gpd.GeoDataFrame:
     ).reset_index(drop=True)
 
 
-def load_local_shades(path: Path | None = None) -> gpd.GeoDataFrame:
+def _empty_shades() -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(
+        columns=["facility_id", "name", "address", "district_name", "adm_name", "facility_type", "shelter_type", "status", "capacity", "longitude", "latitude", "source_file", "shelter_id", "geometry"],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+def _shade_geodataframe(frame: pd.DataFrame) -> gpd.GeoDataFrame:
+    frame = frame[frame["name"].ne("") & _valid_daegu_points(frame)].copy()
+    frame = frame.drop_duplicates(subset=["name", "latitude", "longitude"], keep="first")
+    frame["shelter_id"] = frame["facility_id"]
+    return gpd.GeoDataFrame(
+        frame,
+        geometry=gpd.points_from_xy(frame["longitude"], frame["latitude"]),
+        crs="EPSG:4326",
+    ).reset_index(drop=True)
+
+
+def load_standard_shades(path: Path | None = None) -> gpd.GeoDataFrame:
     path = path or RAW_DIR / "전국그늘막쉼터표준데이터.csv"
     raw = read_tabular(path)
     daegu = raw[raw["시도명"].astype(str).str.strip().eq("대구광역시")].copy()
@@ -166,11 +185,48 @@ def load_local_shades(path: Path | None = None) -> gpd.GeoDataFrame:
             "source_file": path.name,
         }
     )
-    frame = frame[frame["name"].ne("") & _valid_daegu_points(frame)].copy()
-    frame = frame.drop_duplicates(subset=["name", "latitude", "longitude"], keep="first")
-    frame["shelter_id"] = frame["facility_id"]
-    return gpd.GeoDataFrame(
-        frame,
-        geometry=gpd.points_from_xy(frame["longitude"], frame["latitude"]),
-        crs="EPSG:4326",
-    ).reset_index(drop=True)
+    return _shade_geodataframe(frame)
+
+
+def load_suseong_shades(path: Path | None = None, geocoder: Any | None = None) -> gpd.GeoDataFrame:
+    path = path or RAW_DIR / "대구광역시 수성구_그늘막 설치현황_20250719.csv"
+    if not path.exists():
+        return _empty_shades()
+    raw = read_tabular(path)
+    frame = pd.DataFrame(
+        {
+            "facility_id": "SUSEONG-" + raw["관리번호"].fillna("").astype(str).str.strip(),
+            "name": raw["설치장소"].map(_text),
+            "address": raw["소재지주소"].map(_text),
+            "district_name": "수성구",
+            "adm_name": raw["행정동"].map(_text),
+            "facility_type": "그늘막",
+            "shelter_type": "그늘막",
+            "status": "운영",
+            "capacity": 0,
+            "longitude": pd.NA,
+            "latitude": pd.NA,
+            "source_file": path.name,
+        }
+    )
+    if geocoder is not None:
+        latitudes: list[float | None] = []
+        longitudes: list[float | None] = []
+        for address in frame["address"]:
+            coords = geocoder.geocode(address)
+            latitudes.append(coords[0] if coords else None)
+            longitudes.append(coords[1] if coords else None)
+        frame["latitude"] = latitudes
+        frame["longitude"] = longitudes
+    frame["latitude"] = pd.to_numeric(frame["latitude"], errors="coerce")
+    frame["longitude"] = pd.to_numeric(frame["longitude"], errors="coerce")
+    return _shade_geodataframe(frame)
+
+
+def load_local_shades(path: Path | None = None, geocoder: Any | None = None) -> gpd.GeoDataFrame:
+    layers = [load_standard_shades(path), load_suseong_shades(geocoder=geocoder)]
+    layers = [layer for layer in layers if not layer.empty]
+    if not layers:
+        return _empty_shades()
+    merged = gpd.GeoDataFrame(pd.concat(layers, ignore_index=True), geometry="geometry", crs="EPSG:4326")
+    return merged.drop_duplicates(subset=["name", "latitude", "longitude"], keep="first").reset_index(drop=True)
