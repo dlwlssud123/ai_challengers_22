@@ -7,8 +7,13 @@ __pycache__/
 .pytest_cache/
 .coverage
 tmp/
-data/cache/
-data/processed/
+# Data policy: keep only small runtime fixtures and final app-ready outputs.
+data/cache/*
+!data/cache/safetydata_daegu_heat_shelters.json
+data/processed/*
+!data/processed/daegu_all_dong_accessibility_summary.csv
+data/_census_reqdoc_*/
+data/_grid_border_grid_*/
 heatwave-project (4)/
 outputs/
 node_modules/
