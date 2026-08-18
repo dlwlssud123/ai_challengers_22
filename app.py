@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 st.set_page_config(page_title="AI 폭염 도시처방", page_icon="🌡️", layout="wide")
 with st.sidebar:
     theme_mode = st.segmented_control(
-        "화면 모드",
+        "화면 모드",p
         options=["기본", "다크"],
         default="기본",
         help="밝은 화면과 어두운 화면을 전환합니다.",
