@@ -177,14 +177,16 @@ type WhatIfResult = {
 };
 
 // ── API ────────────────────────────────────────────
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
 const api = {
   async overview(metric: MetricMode): Promise<Overview> {
-    const res = await fetch(`/api/overview?metric=${metric}`);
+    const res = await fetch(`${API_BASE}/api/overview?metric=${metric}`);
     if (!res.ok) throw new Error('대시보드 데이터를 불러오지 못했습니다.');
     return res.json();
   },
   async allocation(payload: { budget: number; unit_cost: number; max_facilities: number }) {
-    const res = await fetch('/api/allocation', {
+    const res = await fetch(`${API_BASE}/api/allocation`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -193,7 +195,7 @@ const api = {
     return res.json();
   },
   async simulateWhatIf(payload: { budget: number; unit_cost: number; max_facilities: number; facility_type: string }): Promise<WhatIfResult> {
-    const res = await fetch('/api/simulate-whatif', {
+    const res = await fetch(`${API_BASE}/api/simulate-whatif`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -202,7 +204,7 @@ const api = {
     return res.json();
   },
   async briefing(payload: { budget: number; unit_cost: number; max_facilities: number; facility_type: string; simulation?: WhatIfResult | null }) {
-    const res = await fetch('/api/ai-briefing', {
+    const res = await fetch(`${API_BASE}/api/ai-briefing`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -211,7 +213,7 @@ const api = {
     return res.json();
   },
   async clusterAnalysis(): Promise<ClusterAnalysis> {
-    const res = await fetch('/api/cluster-analysis');
+    const res = await fetch(`${API_BASE}/api/cluster-analysis`);
     if (!res.ok) throw new Error('DBSCAN/SHAP 분석을 불러오지 못했습니다.');
     return res.json();
   }
@@ -1218,7 +1220,7 @@ function App() {
             </div>
           </div>
           <div className="top-right">
-            <a className="outline-button" href="/api/download/dong-summary.csv" style={{ textDecoration: 'none' }}>
+            <a className="outline-button" href={`${API_BASE}/api/download/dong-summary.csv`} style={{ textDecoration: 'none' }}>
               ⬇️ 행정동 요약 CSV
             </a>
             <div className="divider" />
