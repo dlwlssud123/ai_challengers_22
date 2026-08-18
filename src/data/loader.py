@@ -109,13 +109,13 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
     """Load actual sources where available and use explicit demo fallbacks otherwise."""
 
     ensure_data_dirs()
-    shelter_path = discover_shelter_file(RAW_DIR)
-    fallback_shelters = load_shelters(shelter_path)
-    shelters = fallback_shelters
-    citywide_shelters = fallback_shelters
-    shelter_source_mode = "local_csv"
+    shelters = gpd.GeoDataFrame()
+    citywide_shelters = gpd.GeoDataFrame()
+    shelter_path = None
+    shelter_source_mode = "unavailable"
     shelter_fetched_at = None
     shelter_warning = None
+
     if settings.safety_data_shelter_api_url and settings.safety_data_service_key:
         try:
             payload, shelter_source_mode, shelter_fetched_at = fetch_daegu_shelter_payload(
@@ -128,6 +128,20 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
             shelters = citywide_shelters
         except DataSourceError as exc:
             shelter_warning = str(exc)
+
+    if shelters.empty:
+        try:
+            shelter_path = discover_shelter_file(RAW_DIR)
+            fallback_shelters = load_shelters(shelter_path)
+            shelters = fallback_shelters
+            citywide_shelters = fallback_shelters
+            shelter_source_mode = "local_csv"
+        except FileNotFoundError:
+            if shelter_warning:
+                raise DataSourceError(
+                    f"무더위쉼터 API/캐시를 사용할 수 없고 로컬 쉼터 파일도 없습니다: {shelter_warning}"
+                )
+            raise
     area_path = RAW_DIR / "areas.geojson"
     use_real_areas = False
     if area_path.exists() and settings.demo_mode != "true":
@@ -184,7 +198,7 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
     actual_source_names = [
         "재난안전데이터공유플랫폼 DSSP-IF-10942"
         if shelter_source_mode in {"live", "cache"}
-        else shelter_path.name
+        else shelter_path.name if shelter_path is not None else "무더위쉼터 데이터 없음"
     ]
     if use_real_areas:
         actual_source_names.append(area_path.name)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import glob
 import os
 from typing import Any
 
@@ -10,15 +11,29 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from shapely.geometry import shape
-from src.analysis.accessibility import calculate_accessibility
+from src.analysis.accessibility import calculate_accessibility, calculate_grid_accessibility_by_dong
 
+
+PROJECT_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 POPULATION_CSV = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    PROJECT_ROOT_DIR,
     "data",
     "raw",
     "daegu_dong_population_202607.csv"
 )
+GRID_POPULATION_FILES = tuple(sorted(glob.glob(os.path.join(
+    PROJECT_ROOT_DIR,
+    "data",
+    "_census_reqdoc_1787027603696",
+    "2024년_인구_*_100M.csv",
+))))
+GRID_SHAPE_FILES = tuple(sorted(glob.glob(os.path.join(
+    PROJECT_ROOT_DIR,
+    "data",
+    "_grid_border_grid_2025_grid_*",
+    "grid_*_100M.shp",
+))))
 
 
 def normalize_administrative_name(value: Any) -> str:
@@ -190,10 +205,40 @@ def merge_daegu_boundaries(
                 radius_m=500.0,
                 analysis_crs="EPSG:5179"
             )
+            grid_access_lookup = {}
+            if GRID_POPULATION_FILES and GRID_SHAPE_FILES:
+                try:
+                    gdf_grid_access = calculate_grid_accessibility_by_dong(
+                        gdf_boundaries,
+                        citywide_shelters,
+                        grid_population_files=GRID_POPULATION_FILES,
+                        grid_shape_files=GRID_SHAPE_FILES,
+                        d0_m=300.0,
+                        walk_limit_m=500.0,
+                        analysis_crs="EPSG:5179",
+                    )
+                    for row in gdf_grid_access.itertuples():
+                        grid_access_lookup[str(row.adm_cd)] = {
+                            "grid_cell_count": int(row.grid_cell_count),
+                            "grid_population": float(row.grid_population),
+                            "grid_accessibility_index": float(row.grid_accessibility_index),
+                            "grid_accessibility_lack_score": float(row.grid_accessibility_lack_score),
+                            "grid_population_weighted_accessibility_index": float(
+                                row.grid_population_weighted_accessibility_index
+                            ),
+                            "grid_population_weighted_accessibility_lack_score": float(
+                                row.grid_population_weighted_accessibility_lack_score
+                            ),
+                            "grid_mean_nearest_shelter_distance": float(row.grid_mean_nearest_shelter_distance),
+                            "grid_beyond_walk_limit_ratio": float(row.grid_beyond_walk_limit_ratio),
+                        }
+                except Exception:
+                    grid_access_lookup = {}
             for row in gdf_access.itertuples():
                 access_lookup[str(row.adm_cd)] = {
                     "coverage_ratio": float(row.coverage_ratio),
                     "nearest_shelter_distance": float(row.nearest_shelter_distance),
+                    **grid_access_lookup.get(str(row.adm_cd), {}),
                 }
         except Exception:
             pass
@@ -320,7 +365,9 @@ def merge_daegu_boundaries(
         # 5) 쉼터 공간 접근성 부족 (15%)
         acc_data = access_lookup.get(adm_cd, {"coverage_ratio": 0.0, "nearest_shelter_distance": float("nan")})
         coverage_ratio = acc_data["coverage_ratio"]
-        accessibility_lack_score = 100.0 * (1.0 - coverage_ratio)
+        accessibility_lack_score = float(
+            acc_data.get("grid_accessibility_lack_score", 100.0 * (1.0 - coverage_ratio))
+        )
 
         # 동별 종합 취약도 연산
         total_vulnerability = (
@@ -333,6 +380,12 @@ def merge_daegu_boundaries(
 
         distance_val = acc_data["nearest_shelter_distance"]
         distance_str = f"{distance_val:.0f}m" if not np.isnan(distance_val) else "쉼터 없음"
+        grid_mean_distance = acc_data.get("grid_mean_nearest_shelter_distance", float("nan"))
+        grid_distance_str = f"{grid_mean_distance:.0f}m" if not np.isnan(grid_mean_distance) else "격자 데이터 없음"
+        grid_accessibility_display = (
+            f"{acc_data['grid_accessibility_index']*100:.1f}%"
+            if "grid_accessibility_index" in acc_data else "격자 데이터 없음"
+        )
 
         if match:
             score = match["priority_score"]
@@ -355,7 +408,13 @@ def merge_daegu_boundaries(
                 "coverage_ratio_display": f"{coverage_ratio*100:.1f}%",
                 "nearest_shelter_distance_display": distance_str,
                 "shelter_accessibility_score": supply_score,
-                "shelter_accessibility_display": shelter_accessibility_display
+                "shelter_accessibility_display": shelter_accessibility_display,
+                "grid_accessibility_index": acc_data.get("grid_accessibility_index"),
+                "grid_accessibility_display": grid_accessibility_display,
+                "grid_accessibility_lack_score": accessibility_lack_score,
+                "grid_mean_nearest_shelter_distance_display": grid_distance_str,
+                "grid_cell_count": acc_data.get("grid_cell_count", 0),
+                "grid_beyond_walk_limit_ratio": acc_data.get("grid_beyond_walk_limit_ratio"),
             }
         elif district_match:
             district_name, district = district_match
@@ -388,7 +447,13 @@ def merge_daegu_boundaries(
                 "coverage_ratio_display": f"{coverage_ratio*100:.1f}%",
                 "nearest_shelter_distance_display": distance_str,
                 "shelter_accessibility_score": supply_score,
-                "shelter_accessibility_display": shelter_accessibility_display
+                "shelter_accessibility_display": shelter_accessibility_display,
+                "grid_accessibility_index": acc_data.get("grid_accessibility_index"),
+                "grid_accessibility_display": grid_accessibility_display,
+                "grid_accessibility_lack_score": accessibility_lack_score,
+                "grid_mean_nearest_shelter_distance_display": grid_distance_str,
+                "grid_cell_count": acc_data.get("grid_cell_count", 0),
+                "grid_beyond_walk_limit_ratio": acc_data.get("grid_beyond_walk_limit_ratio"),
             }
         else:
             properties = {
@@ -411,7 +476,13 @@ def merge_daegu_boundaries(
                 "coverage_ratio_display": f"{coverage_ratio*100:.1f}%",
                 "nearest_shelter_distance_display": distance_str,
                 "shelter_accessibility_score": supply_score,
-                "shelter_accessibility_display": shelter_accessibility_display
+                "shelter_accessibility_display": shelter_accessibility_display,
+                "grid_accessibility_index": acc_data.get("grid_accessibility_index"),
+                "grid_accessibility_display": grid_accessibility_display,
+                "grid_accessibility_lack_score": accessibility_lack_score,
+                "grid_mean_nearest_shelter_distance_display": grid_distance_str,
+                "grid_cell_count": acc_data.get("grid_cell_count", 0),
+                "grid_beyond_walk_limit_ratio": acc_data.get("grid_beyond_walk_limit_ratio"),
             }
         feature["properties"] = properties
 
