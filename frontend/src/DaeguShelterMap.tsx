@@ -384,44 +384,62 @@ export function DaeguShelterMap({
   }, [onDistrictClick]);
   const onEachDong = React.useCallback((feature: any, layer: L.Layer) => {
     const props = feature?.properties ?? {};
-    const name      = String(props.adm_name ?? props.full_adm_name ?? '');
-    const vuln      = props.vulnerability_score != null
-      ? Number(props.vulnerability_score).toFixed(1) : '-';
-    const priority  = props.priority_score != null
-      ? Number(props.priority_score).toFixed(1) : '-';
-    const shelters  = props.shelter_count ?? '-';
-    const coverage  = props.coverage_ratio_500m_area != null
-      ? (Number(props.coverage_ratio_500m_area) * 100).toFixed(1) + '%' : '-';
-    const elderly   = props.elderly_population_60_plus != null
-      ? Number(props.elderly_population_60_plus).toLocaleString('ko-KR') + '명' : '-';
-    const dist      = props.grid_mean_nearest_shelter_distance_m != null
-      ? Math.round(Number(props.grid_mean_nearest_shelter_distance_m)).toLocaleString('ko-KR') + 'm' : '-';
+    const name = String(props.adm_name ?? props.full_adm_name ?? '');
+    const cScore = props.composite_risk_score != null
+      ? Number(props.composite_risk_score).toFixed(1)
+      : props.vulnerability_score != null ? Number(props.vulnerability_score).toFixed(1) : '-';
+    
+    const grade = props.composite_risk_grade || (
+      Number(cScore) >= 80 ? '심각' :
+      Number(cScore) >= 60 ? '위험' :
+      Number(cScore) >= 40 ? '주의' :
+      Number(cScore) >= 20 ? '보통' : '양호'
+    );
 
-    const vulnNum = props.vulnerability_score != null ? Number(props.vulnerability_score) : null;
-    const grade = vulnNum == null ? '' : vulnNum >= 80 ? '위험' : vulnNum >= 60 ? '주의' : '양호';
-    const gradeClass = vulnNum == null ? '' : vulnNum >= 80 ? 'vuln-danger' : vulnNum >= 60 ? 'vuln-warn' : 'vuln-safe';
+    const gradeClass =
+      grade === '심각' ? 'vuln-severe' :
+      grade === '위험' ? 'vuln-danger' :
+      grade === '주의' ? 'vuln-warn' :
+      grade === '보통' ? 'vuln-moderate' : 'vuln-safe';
+
+    const pDriver = props.primary_risk_driver || '취약인구 밀집';
+    const shelters = props.shelter_count ?? 0;
+    const coverage = props.coverage_ratio_500m_area != null
+      ? (Number(props.coverage_ratio_500m_area) * 100).toFixed(1) + '%' : '-';
+    const elderly = props.elderly_population_60_plus != null
+      ? Number(props.elderly_population_60_plus).toLocaleString('ko-KR') + '명' : '-';
+    const dist = props.grid_mean_nearest_shelter_distance_m != null
+      ? Math.round(Number(props.grid_mean_nearest_shelter_distance_m)).toLocaleString('ko-KR') + 'm' : '-';
 
     if (name) {
       layer.bindTooltip(
         `<div class="dong-info-tooltip">
           <div class="dit-header">
-            <b class="dit-name">${escapeHtml(name)}</b>
-            ${grade ? `<span class="dit-grade ${gradeClass}">${grade}</span>` : ''}
+            <div>
+              <b class="dit-name">${escapeHtml(name)}</b>
+              <span class="dit-district">${escapeHtml(props.district_name || '')}</span>
+            </div>
+            <span class="dit-grade ${gradeClass}">${grade}</span>
+          </div>
+          <div class="dit-driver">
+            <span class="dit-driver-badge">주요 원인</span>
+            <span>${escapeHtml(pDriver)}</span>
           </div>
           <div class="dit-grid">
-            <div class="dit-row"><span>취약도 점수</span><b>${vuln}</b></div>
-            <div class="dit-row"><span>우선순위</span><b>${priority}</b></div>
+            <div class="dit-row"><span>폭염위험지수</span><b class="highlight">${cScore}점</b></div>
+            <div class="dit-row"><span>쉼터 커버리지</span><b>${coverage}</b></div>
             <div class="dit-row"><span>무더위쉼터</span><b>${shelters}곳</b></div>
-            <div class="dit-row"><span>500m 커버리지</span><b>${coverage}</b></div>
-            <div class="dit-row"><span>60세이상 고령인구</span><b>${elderly}</b></div>
+            <div class="dit-row"><span>고령인구(60+)</span><b>${elderly}</b></div>
             <div class="dit-row"><span>평균 접근거리</span><b>${dist}</b></div>
+            <div class="dit-row"><span>녹지비율</span><b>${props.green_ratio_percent != null ? Number(props.green_ratio_percent).toFixed(1) + '%' : '-'}</b></div>
           </div>
+          <div class="dit-hint">클릭 시 우측 상세 분석으로 이동</div>
         </div>`,
         {
           direction: 'top',
           sticky: true,
           className: 'portable-dong-tooltip',
-          offset: [0, -4],
+          offset: [0, -6],
         },
       );
     }
@@ -551,13 +569,13 @@ export function DaeguShelterMap({
 
       {showLegend && (
         <div className="portable-map-legend" aria-hidden="true">
-          <b>지도 범례</b>
-          <span><i className="portable-legend-city" />대구 전체 외곽선</span>
-          <span><i className="portable-legend-district" />구·군 보조 경계</span>
-          <span><i className="portable-legend-dong" />행정동 경계 (취약도)</span>
-          <span><i className="portable-legend-vuln-high" />취약도 높음</span>
-          <span><i className="portable-legend-vuln-mid" />취약도 보통</span>
-          <span><i className="portable-legend-vuln-low" />취약도 낮음</span>
+          <b>폭염 취약도 등급</b>
+          <span><i className="portable-legend-vuln-severe" />심각 (80~100)</span>
+          <span><i className="portable-legend-vuln-high" />위험 (60~80)</span>
+          <span><i className="portable-legend-vuln-mid" />주의 (40~60)</span>
+          <span><i className="portable-legend-vuln-moderate" />보통 (20~40)</span>
+          <span><i className="portable-legend-vuln-low" />양호 (0~20)</span>
+          <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.12)', margin: '4px 0' }} />
           <span><i className="portable-legend-radius" />쉼터 500m 반경</span>
           <span><i className="portable-legend-cluster" />쉼터 군집</span>
         </div>

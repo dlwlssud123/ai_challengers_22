@@ -193,11 +193,13 @@
 .portable-legend-city     { border-top: 4.8px solid #0f1f2c; }
 .portable-legend-district { border-top: 2.8px solid #2c4455; border-style: dashed; }
 .portable-legend-dong     { width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.5); background: rgba(220,38,38,0.55); border-radius: 2px; }
-.portable-legend-vuln-high { width: 14px; height: 10px; background: rgba(220,38,38,0.72); border-radius: 2px; }
-.portable-legend-vuln-mid  { width: 14px; height: 10px; background: rgba(250,204,21,0.72); border-radius: 2px; }
-.portable-legend-vuln-low  { width: 14px; height: 10px; background: rgba(44,123,182,0.72); border-radius: 2px; }
-.portable-legend-radius   { width: 15px; height: 15px; border: 1px solid #43c8cc; border-radius: 50%; }
-.portable-legend-cluster  { width: 15px; height: 15px; border: 1px solid #da9200; border-radius: 50%; background: rgba(255, 190, 0, 0.74); }
+.portable-legend-vuln-severe   { width: 14px; height: 10px; background: rgba(239, 68, 68, 0.9); border-radius: 2px; }
+.portable-legend-vuln-high     { width: 14px; height: 10px; background: rgba(249, 115, 22, 0.9); border-radius: 2px; }
+.portable-legend-vuln-mid      { width: 14px; height: 10px; background: rgba(234, 179, 8, 0.85); border-radius: 2px; }
+.portable-legend-vuln-moderate { width: 14px; height: 10px; background: rgba(6, 182, 212, 0.85); border-radius: 2px; }
+.portable-legend-vuln-low      { width: 14px; height: 10px; background: rgba(34, 197, 94, 0.85); border-radius: 2px; }
+.portable-legend-radius   { width: 15px; height: 15px; border: 1.5px solid #43c8cc; border-radius: 50%; background: rgba(67, 200, 204, 0.15); }
+.portable-legend-cluster  { width: 15px; height: 15px; border: 1.5px solid #ff8b24; border-radius: 50%; background: rgba(255, 90, 43, 0.75); }
 
 @media (max-width: 640px) {
   .portable-district-label span { font-size: 12px; }
@@ -247,33 +249,65 @@
 }
 
 /* ── 행정동 상세 툴팁 내용 ── */
+/* ── 행정동 상세 툴팁 내용 ── */
 .dong-info-tooltip {
-  padding: 12px 14px;
-  border-radius: 11px;
-  background: rgba(10, 18, 26, 0.95);
-  border: 1px solid #2d4255;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.45);
-  min-width: 180px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: rgba(10, 18, 28, 0.96);
+  border: 1px solid #2d4558;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+  min-width: 220px;
   color: #d6e2ea;
   font-size: 11px;
   line-height: 1.4;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
 }
 
 .dit-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin-bottom: 9px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #253848;
+  margin-bottom: 7px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #223545;
 }
 
 .dit-name {
   font-size: 14px;
   font-weight: 800;
-  color: #eef4f8;
+  color: #f1f5f9;
   letter-spacing: -0.02em;
+}
+
+.dit-district {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-left: 5px;
+  font-weight: 500;
+}
+
+.dit-driver {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #f8fafc;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dit-driver-badge {
+  font-size: 9px;
+  font-weight: 750;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(249, 115, 22, 0.2);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.35);
 }
 
 .dit-grade {
@@ -283,28 +317,40 @@
   border-radius: 99px;
 }
 
-.dit-grade.vuln-danger {
-  background: rgba(220,38,38,0.18);
+.dit-grade.vuln-severe {
+  background: rgba(239, 68, 68, 0.22);
   color: #f87171;
-  border: 1px solid rgba(220,38,38,0.4);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.dit-grade.vuln-danger {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.45);
 }
 
 .dit-grade.vuln-warn {
-  background: rgba(249,115,22,0.18);
-  color: #fb923c;
-  border: 1px solid rgba(249,115,22,0.4);
+  background: rgba(234, 179, 8, 0.18);
+  color: #facc15;
+  border: 1px solid rgba(234, 179, 8, 0.45);
+}
+
+.dit-grade.vuln-moderate {
+  background: rgba(6, 182, 212, 0.18);
+  color: #22d3ee;
+  border: 1px solid rgba(6, 182, 212, 0.4);
 }
 
 .dit-grade.vuln-safe {
-  background: rgba(34,197,94,0.15);
+  background: rgba(34, 197, 94, 0.18);
   color: #4ade80;
-  border: 1px solid rgba(34,197,94,0.35);
+  border: 1px solid rgba(34, 197, 94, 0.4);
 }
 
 .dit-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 5px 10px;
+  gap: 6px 10px;
 }
 
 .dit-row {
@@ -317,13 +363,26 @@
   font-size: 9px;
   color: #7a94a6;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
 }
 
 .dit-row b {
   font-size: 12px;
   font-weight: 750;
   color: #dce9f0;
+}
+
+.dit-row b.highlight {
+  color: #ff8b24;
+  font-weight: 850;
+}
+
+.dit-hint {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  font-size: 9px;
+  color: #8198a9;
+  text-align: center;
 }
 

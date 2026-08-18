@@ -9,6 +9,7 @@ from backend.services.dashboard import (
     build_allocation,
     build_overview,
     get_summary_csv_path,
+    simulate_what_if,
 )
 from backend.services.ml_prediction import build_ml_scenario
 from backend.services.cluster_analysis import build_cluster_analysis, feature_specification
@@ -41,6 +42,11 @@ def allocation(payload: dict) -> dict:
 @app.post("/api/ai-briefing")
 def ai_briefing(payload: dict) -> dict:
     return build_ai_briefing(payload)
+
+
+@app.post("/api/simulate-whatif")
+def simulate_whatif(payload: dict) -> dict:
+    return simulate_what_if(payload)
 
 
 @app.post("/api/ml-scenario")

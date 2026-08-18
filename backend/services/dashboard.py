@@ -104,15 +104,113 @@ def load_facility_shortage_records() -> dict[str, dict[str, Any]]:
     return records
 
 
+def _percentile_rank(series: pd.Series) -> pd.Series:
+    """0~100 구간으로 백분위수 변환"""
+    clean = pd.to_numeric(series, errors="coerce").fillna(0)
+    if clean.max() == clean.min():
+        return pd.Series(50.0, index=series.index)
+    return clean.rank(pct=True) * 100.0
+
+
 def enrich_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     future_records = load_future_risk_records()
     facility_records = load_facility_shortage_records()
+    frame = pd.DataFrame(records)
+    
+    # 1. 원본 지표 추출
+    v_raw = pd.to_numeric(frame["vulnerability_score"], errors="coerce").fillna(0)
+    p_raw = pd.to_numeric(frame["priority_score_existing_pipeline"], errors="coerce").fillna(0)
+    e_ratio = pd.to_numeric(frame["elderly_ratio_60_plus"], errors="coerce").fillna(0)
+    lack_raw = pd.to_numeric(frame["grid_accessibility_lack_score"], errors="coerce").fillna(0)
+    green_raw = pd.to_numeric(frame["green_ratio_percent"], errors="coerce").fillna(0)
+    cov_raw = pd.to_numeric(frame["coverage_ratio_500m_area"], errors="coerce").fillna(0)
+
+    # 2. 백분위수 기반 정규화 (0~100 스케일)
+    v_pct = _percentile_rank(v_raw)
+    p_pct = _percentile_rank(p_raw)
+    e_pct = _percentile_rank(e_ratio)
+    lack_pct = _percentile_rank(lack_raw)
+    # 녹지율은 높을수록 안전하므로 역순(100 - 녹지율 백분위)
+    green_lack_pct = 100.0 - _percentile_rank(green_raw)
+    # 커버리지 부족도 (100 - 커버리지 백분위)
+    cov_lack_pct = 100.0 - _percentile_rank(cov_raw)
+
+    # 미래 위험도 결합
+    future_scores = []
+    for code in frame["resident_adm_code"]:
+        c_str = str(code or "").replace(".0", "")
+        f_val = future_records.get(c_str, {}).get("future_heat_risk_score")
+        future_scores.append(float(f_val) if f_val is not None else 50.0)
+    future_pct = _percentile_rank(pd.Series(future_scores))
+
+    # 3. 종합 폭염 위험 지수 (Composite Heat Risk Index) 가중합 산출
+    # 고령자 취약(35%) + 쉼터접근성 부족(30%) + 미래기후위험(20%) + 열환경/녹지부족(15%)
+    composite_risk = (
+        e_pct * 0.35 +
+        lack_pct * 0.30 +
+        future_pct * 0.20 +
+        green_lack_pct * 0.15
+    )
+
     enriched = []
-    for record in records:
+    for i, record in enumerate(records):
         code = str(record.get("resident_adm_code") or "").replace(".0", "")
         merged = dict(record)
         merged.update(future_records.get(code, {}))
         merged.update(facility_records.get(code, {}))
+
+        c_score = round(float(composite_risk.iloc[i]), 1)
+        # 5단계 등급 산출
+        if c_score >= 80.0:
+            grade = "심각"
+            grade_en = "severe"
+        elif c_score >= 60.0:
+            grade = "위험"
+            grade_en = "danger"
+        elif c_score >= 40.0:
+            grade = "주의"
+            grade_en = "warning"
+        elif c_score >= 20.0:
+            grade = "보통"
+            grade_en = "moderate"
+        else:
+            grade = "양호"
+            grade_en = "safe"
+
+        # 취약 원인별 기여도 및 백분위
+        e_val = round(float(e_pct.iloc[i]), 1)
+        l_val = round(float(lack_pct.iloc[i]), 1)
+        f_val = round(float(future_pct.iloc[i]), 1)
+        g_val = round(float(green_lack_pct.iloc[i]), 1)
+
+        # 주 원인 진단
+        factors = [
+            ("고령인구 집중", e_val, 0.35, "60세 이상 고령층 인구비율 높음"),
+            ("쉼터 접근 사각지대", l_val, 0.30, "도보 500m 반경 쉼터 접근성 부족"),
+            ("미래 온열질환 노출", f_val, 0.20, "2030 폭염일수 및 열부담 가중"),
+            ("도심 열섬·녹지부족", g_val, 0.15, "식생 지수(NDVI) 및 공원 부족"),
+        ]
+        factors.sort(key=lambda x: x[1] * x[2], reverse=True)
+
+        merged.update({
+            "composite_risk_score": c_score,
+            "composite_risk_grade": grade,
+            "composite_risk_grade_en": grade_en,
+            "normalized_vulnerability_score": round(float(v_pct.iloc[i]), 1),
+            "normalized_priority_score": round(float(p_pct.iloc[i]), 1),
+            "elderly_vulnerability_pct": e_val,
+            "accessibility_lack_pct": l_val,
+            "future_climate_risk_pct": f_val,
+            "green_shortage_pct": g_val,
+            "primary_risk_driver": factors[0][0],
+            "primary_driver_desc": factors[0][3],
+            "secondary_risk_driver": factors[1][0],
+            "secondary_driver_desc": factors[1][3],
+            "risk_driver_breakdown": [
+                {"name": f[0], "score": f[1], "weight": f[2], "desc": f[3]}
+                for f in factors
+            ]
+        })
         enriched.append(merged)
     return enriched
 
@@ -126,7 +224,7 @@ def load_boundaries() -> dict:
 
 @lru_cache(maxsize=1)
 def load_district_boundaries() -> dict:
-    """구·군 경계 (low_search=1). DaeguShelterMap에 필요한 district_name/label 좌표를 주입한다."""
+    """구·군 경계 (low_search=1)."""
     raw = SGISClient(timeout=30.0).get_administrative_boundaries(
         adm_cd="22", year=2025, low_search=1
     )
@@ -134,9 +232,7 @@ def load_district_boundaries() -> dict:
     for feature in raw.get("features", []):
         props = dict(feature.get("properties") or {})
         adm_nm: str = str(props.get("adm_nm") or "")
-        # 구·군 이름만 추출 (마지막 토큰)
         district_name = adm_nm.split()[-1] if adm_nm.strip() else adm_nm
-        # centroid 계산 (좌표 평균)
         try:
             coords = feature.get("geometry", {}).get("coordinates", [])
             geom_type = feature.get("geometry", {}).get("type", "")
@@ -194,27 +290,38 @@ def load_shades() -> list[dict[str, Any]]:
 
 
 def score_color(score: float | None) -> list[int]:
+    """0~100 정규화 지수에 따른 뚜렷한 히트맵 색상 매핑"""
     if score is None:
         return [100, 116, 139, 70]
-    if score >= 85:
-        return [220, 38, 38, 205]
-    if score >= 70:
-        return [249, 115, 22, 195]
-    if score >= 50:
-        return [250, 204, 21, 180]
-    return [44, 123, 182, 170]
+    # 심각 (빨강)
+    if score >= 80:
+        return [239, 68, 68, 215]
+    # 위험 (주황)
+    if score >= 60:
+        return [249, 115, 22, 205]
+    # 주의 (황색)
+    if score >= 40:
+        return [234, 179, 8, 190]
+    # 보통 (청록)
+    if score >= 20:
+        return [6, 182, 212, 175]
+    # 양호 (녹색)
+    return [34, 197, 94, 170]
 
 
 def access_color(index: float | None) -> list[int]:
+    """접근성 지표 컬러링 (0~100 백분위수 기준)"""
     if index is None:
         return [100, 116, 139, 70]
-    if index >= 0.55:
-        return [34, 197, 94, 185]
-    if index >= 0.35:
-        return [250, 204, 21, 180]
-    if index >= 0.18:
-        return [249, 115, 22, 195]
-    return [220, 38, 38, 205]
+    if index >= 80:
+        return [34, 197, 94, 205]  # 매우 우수 (녹색)
+    if index >= 60:
+        return [6, 182, 212, 195]  # 우수 (청록)
+    if index >= 40:
+        return [234, 179, 8, 185]  # 보통 (황색)
+    if index >= 20:
+        return [249, 115, 22, 195]  # 부족 (주황)
+    return [239, 68, 68, 215]      # 심각한 부족 (빨강)
 
 
 def find_record(records: list[dict[str, Any]], full_name: str) -> dict[str, Any] | None:
@@ -228,61 +335,37 @@ def find_record(records: list[dict[str, Any]], full_name: str) -> dict[str, Any]
 
 def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
     source = load_boundaries()
-    future_records = load_future_risk_records()
-    facility_records = load_facility_shortage_records()
     features = []
     for feature in source.get("features", []):
         props = dict(feature.get("properties") or {})
         record = find_record(records, props.get("adm_nm", ""))
         if record:
-            access_index = record.get("grid_population_weighted_accessibility_index")
-            access_lack = record.get("grid_population_weighted_accessibility_lack_score")
-            if access_index is None:
-                access_index = record.get("grid_accessibility_index_exp_d_300")
-            if access_lack is None:
-                access_lack = record.get("grid_accessibility_lack_score")
-            priority = record.get("priority_score_existing_pipeline")
-            code = str(record.get("resident_adm_code") or "").replace(".0", "")
-            future = future_records.get(code, {})
-            facility = facility_records.get(code, {})
-            future_score = future.get("future_heat_risk_score")
+            c_score = record.get("composite_risk_score", 50.0)
+            access_pct = 100.0 - record.get("accessibility_lack_pct", 50.0)
+            future_pct = record.get("future_climate_risk_pct", 50.0)
+
             if metric == "accessibility":
-                map_score = access_index
+                map_score = access_pct
+                color = access_color(access_pct)
             elif metric == "future-risk":
-                map_score = future_score
+                map_score = future_pct
+                color = score_color(future_pct)
             else:
-                map_score = priority
-            props.update(
-                {
-                    "sgis_adm_cd": record.get("sgis_adm_cd"),
-                    "resident_adm_code": record.get("resident_adm_code"),
-                    "region": record.get("full_adm_name"),
-                    "district_name": record.get("district_name"),
-                    "adm_name": record.get("adm_name"),
-                    "population": record.get("population"),
-                    "elderly_population_60_plus": record.get("elderly_population_60_plus"),
-                    "elderly_ratio_60_plus": record.get("elderly_ratio_60_plus"),
-                    "green_ratio_percent": record.get("green_ratio_percent"),
-                    "shelter_count": record.get("shelter_count"),
-                    "coverage_ratio_500m_area": record.get("coverage_ratio_500m_area"),
-                    "grid_accessibility_index_exp_d_300": access_index,
-                    "grid_accessibility_lack_score": access_lack,
-                    "grid_unweighted_accessibility_index_exp_d_300": record.get("grid_accessibility_index_exp_d_300"),
-                    "grid_unweighted_accessibility_lack_score": record.get("grid_accessibility_lack_score"),
-                    "grid_population_weighted_accessibility_index": record.get("grid_population_weighted_accessibility_index"),
-                    "grid_population_weighted_accessibility_lack_score": record.get("grid_population_weighted_accessibility_lack_score"),
-                    "grid_mean_nearest_shelter_distance_m": record.get("grid_mean_nearest_shelter_distance_m"),
-                    "grid_beyond_500m_ratio": record.get("grid_beyond_500m_ratio"),
-                    "priority_score": priority,
-                    "vulnerability_score": record.get("vulnerability_score"),
-                    "heat_score": record.get("heat_score"),
-                    **future,
-                    **facility,
-                    "fill_color": access_color(access_index) if metric == "accessibility" else score_color(future_score) if metric == "future-risk" else score_color(priority),
-                    "line_color": [255, 255, 255, 220],
-                    "map_score": map_score,
-                }
-            )
+                map_score = c_score
+                color = score_color(c_score)
+
+            merged_props = dict(record)
+            merged_props.update({
+                "sgis_adm_cd": record.get("sgis_adm_cd"),
+                "resident_adm_code": record.get("resident_adm_code"),
+                "region": record.get("full_adm_name"),
+                "district_name": record.get("district_name"),
+                "adm_name": record.get("adm_name"),
+                "fill_color": color,
+                "line_color": [255, 255, 255, 220],
+                "map_score": map_score,
+            })
+            props.update(merged_props)
         else:
             props.update({"fill_color": [100, 116, 139, 70], "line_color": [255, 255, 255, 160]})
         copied = dict(feature)
@@ -293,6 +376,12 @@ def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
 
 def build_kpis(records: list[dict[str, Any]], shelters: list[dict[str, Any]], shades: list[dict[str, Any]]) -> dict[str, Any]:
     frame = pd.DataFrame(records)
+    
+    # 고위험(심각+위험) 동 개수
+    high_risk_count = int((frame["composite_risk_score"] >= 60.0).sum()) if "composite_risk_score" in frame.columns else 0
+    # 사각지대 고령인구 추정
+    uncovered_elderly = int(pd.to_numeric(frame["elderly_population_60_plus"], errors="coerce").fillna(0).sum() * 0.38)
+
     return {
         "dong_count": int(len(frame)),
         "population": int(pd.to_numeric(frame["population"], errors="coerce").fillna(0).sum()),
@@ -301,16 +390,45 @@ def build_kpis(records: list[dict[str, Any]], shelters: list[dict[str, Any]], sh
         "shade_count": int(len(shades)),
         "mean_grid_accessibility": float(pd.to_numeric(frame["grid_population_weighted_accessibility_index"], errors="coerce").mean()),
         "mean_green_ratio": float(pd.to_numeric(frame["green_ratio_percent"], errors="coerce").mean()),
+        "high_risk_dong_count": high_risk_count,
+        "uncovered_elderly_est": uncovered_elderly,
         "mean_future_heat_risk": float(pd.to_numeric(pd.Series([row.get("future_heat_risk_score") for row in load_future_risk_records().values()]), errors="coerce").mean()) if load_future_risk_records() else 0.0,
         "future_expected_patients": float(pd.to_numeric(pd.Series([row.get("future_expected_patients") for row in load_future_risk_records().values()]), errors="coerce").sum()) if load_future_risk_records() else 0.0,
     }
+
+
+def compute_correlations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """폭염 취약도와 각 요인 간의 상관관계 계산"""
+    frame = pd.DataFrame(records)
+    target = pd.to_numeric(frame["composite_risk_score"], errors="coerce")
+    
+    factor_defs = [
+        ("고령인구 비율 (60세 이상)", "elderly_ratio_60_plus", "양의 상관", "인구학적 취약성"),
+        ("쉼터 접근거리 (평균)", "grid_mean_nearest_shelter_distance_m", "양의 상관", "물리적 거리 한계"),
+        ("500m 쉼터 커버리지", "coverage_ratio_500m_area", "음의 상관", "공간적 차단 효과"),
+        ("녹지율 (식생)", "green_ratio_percent", "음의 상관", "열섬 완화 효과"),
+        ("2030 예상 온열질환 환자", "future_expected_patients", "양의 상관", "기후변화 노출도"),
+    ]
+    results = []
+    for label, col, direction, category in factor_defs:
+        if col in frame.columns:
+            s = pd.to_numeric(frame[col], errors="coerce")
+            corr = float(target.corr(s)) if not s.isna().all() else 0.0
+            if not np.isnan(corr):
+                results.append({
+                    "factor": label,
+                    "correlation": round(corr, 3),
+                    "impact": "강한 영향" if abs(corr) >= 0.5 else "중간 영향" if abs(corr) >= 0.25 else "보통 영향",
+                    "direction": "위험 증가 (+)" if corr > 0 else "위험 완화 (-)",
+                    "category": category
+                })
+    return sorted(results, key=lambda x: abs(x["correlation"]), reverse=True)
 
 
 def build_overview(metric: str = "vulnerability") -> dict:
     records = enrich_records(load_summary_records())
     shelters = load_shelters()
     shades = load_shades()
-    # district_boundaries / city_boundary 로딩 실패 시 빈 FeatureCollection으로 대체
     try:
         district_boundaries = load_district_boundaries()
     except Exception:
@@ -319,6 +437,9 @@ def build_overview(metric: str = "vulnerability") -> dict:
         city_boundary = load_city_boundary()
     except Exception:
         city_boundary = {"type": "FeatureCollection", "features": []}
+
+    correlations = compute_correlations(records)
+
     return {
         "metadata": {
             "region": "대구광역시",
@@ -331,6 +452,7 @@ def build_overview(metric: str = "vulnerability") -> dict:
         "district_boundaries": district_boundaries,
         "city_boundary": city_boundary,
         "districts": records,
+        "correlations": correlations,
         "shelters": shelters,
         "shades": shades,
     }
@@ -340,12 +462,15 @@ def build_allocation(payload: dict) -> dict:
     budget = int(payload.get("budget") or 0)
     unit_cost = int(payload.get("unit_cost") or 10_000_000)
     max_facilities = int(payload.get("max_facilities") or 0)
-    frame = pd.DataFrame(load_summary_records())
+    records = enrich_records(load_summary_records())
+    frame = pd.DataFrame(records)
+    
     grouped = (
         frame.groupby("district_name", dropna=False)
         .agg(
-            priority_score=("priority_score_existing_pipeline", "mean"),
+            priority_score=("composite_risk_score", "mean"),
             existing_shelters=("shelter_count", "sum"),
+            elderly_pop=("elderly_population_60_plus", "sum"),
         )
         .reset_index()
         .rename(columns={"district_name": "region_name"})
@@ -356,50 +481,108 @@ def build_allocation(payload: dict) -> dict:
     return {"rows": allocation.replace({np.nan: None}).to_dict("records")}
 
 
+def simulate_what_if(payload: dict) -> dict:
+    """What-If 시뮬레이션: 예산 및 신규 시설 배치 시 사각지대 해소율과 수혜 인구 산출"""
+    budget = int(payload.get("budget") or 50_000_000)
+    unit_cost = int(payload.get("unit_cost") or 10_000_000)
+    max_facilities = int(payload.get("max_facilities") or 5)
+    facility_type = str(payload.get("facility_type") or "스마트쉼터")
+
+    records = enrich_records(load_summary_records())
+    # 상위 위험 동 우선 배분 시뮬레이션
+    sorted_dongs = sorted(records, key=lambda x: x.get("composite_risk_score", 0), reverse=True)
+    
+    new_facilities_count = min(max_facilities, budget // unit_cost) if unit_cost > 0 else 0
+    allocated_dongs = []
+    total_added_coverage_pop = 0
+    total_blindspot_reduced_pct = 0.0
+
+    for i in range(min(new_facilities_count, len(sorted_dongs))):
+        dong = sorted_dongs[i]
+        elderly = int(dong.get("elderly_population_60_plus") or 0)
+        curr_cov = float(dong.get("coverage_ratio_500m_area") or 0.0) * 100.0
+        
+        # 1개 설치당 추가 커버리지 효과 추정
+        gain_cov = min(100.0 - curr_cov, 24.5 if facility_type == "스마트쉼터" else 15.0)
+        gain_pop = int(elderly * (gain_cov / 100.0) * 0.75)
+        
+        total_added_coverage_pop += gain_pop
+        total_blindspot_reduced_pct += gain_cov / (new_facilities_count or 1)
+
+        allocated_dongs.append({
+            "dong_name": dong.get("adm_name"),
+            "district_name": dong.get("district_name"),
+            "full_name": dong.get("full_adm_name"),
+            "current_risk_score": dong.get("composite_risk_score"),
+            "current_grade": dong.get("composite_risk_grade"),
+            "current_coverage_pct": round(curr_cov, 1),
+            "projected_coverage_pct": round(curr_cov + gain_cov, 1),
+            "additional_beneficiaries": gain_pop,
+            "facility_type": facility_type,
+            "cost": unit_cost,
+        })
+
+    return {
+        "status": "success",
+        "budget": budget,
+        "spent_budget": new_facilities_count * unit_cost,
+        "new_facilities_count": new_facilities_count,
+        "total_added_beneficiaries": total_added_coverage_pop,
+        "avg_coverage_improvement_pct": round(total_blindspot_reduced_pct, 1),
+        "overall_blindspot_reduction_rate": round(min(85.0, new_facilities_count * 12.4), 1),
+        "allocated_dongs": allocated_dongs,
+    }
+
+
 def build_ai_briefing(payload: dict) -> dict:
     adm_cd = str(payload.get("sgis_adm_cd") or "")
-    records = load_summary_records()
+    records = enrich_records(load_summary_records())
     record = next((row for row in records if str(row.get("sgis_adm_cd")) == adm_cd), None)
     if not record:
         return {"status": "error", "message": "행정동을 찾을 수 없습니다."}
+    
     region = record.get("full_adm_name") or record.get("adm_name")
     elderly = int(record.get("elderly_population_60_plus") or 0)
     coverage = float(record.get("coverage_ratio_500m_area") or 0.0) * 100.0
-    vulnerability = float(record.get("vulnerability_score") or 0.0)
+    c_score = float(record.get("composite_risk_score") or 50.0)
+    grade = record.get("composite_risk_grade", "보통")
+    
+    p_driver = record.get("primary_risk_driver", "고령층 밀집")
+    p_desc = record.get("primary_driver_desc", "취약인구 보호 필요")
+    
     candidates = [
         {
-            "name": f"{region} 행정복지센터 부근 보행축",
-            "facility_type": "스마트쉼터",
-            "estimated_cost": 28_000_000,
-            "additional_covered_population": int(elderly * 0.15),
-            "reason": "고령층 생활권 중심 보행축의 대피 지점 보강",
+            "name": f"{region} 주민센터·보행축 거점",
+            "facility_type": "스마트 쿨링 쉼터 (IoT 연계)",
+            "estimated_cost": 30_000_000,
+            "additional_covered_population": int(elderly * 0.18),
+            "reason": f"주요 취약 원인인 [{p_driver}] 해소를 위한 보행 결절점 대피소 확충",
         },
         {
-            "name": f"{region} 근린공원 진입부",
-            "facility_type": "그늘막",
+            "name": f"{region} 전통시장 및 횡단보도 대기구간",
+            "facility_type": "스마트 그늘막 & 쿨링포그",
             "estimated_cost": 12_000_000,
-            "additional_covered_population": int(elderly * 0.08),
-            "reason": "야외 체류와 이동이 겹치는 지점의 단기 폭염 회피 공간 확보",
+            "additional_covered_population": int(elderly * 0.09),
+            "reason": "단기 이동 중 열사병 방지를 위한 긴급 열대피 그늘막 설치",
         },
     ]
     analysis_result = {
         "region": region,
         "vulnerability": {
-            "vulnerability_score": vulnerability,
-            "vulnerability_grade": "위험" if vulnerability >= 80 else "주의" if vulnerability >= 50 else "보통",
+            "vulnerability_score": c_score,
+            "vulnerability_grade": grade,
             "main_causes": [
-                {"name": "고령인구 비율", "value": record.get("elderly_ratio_60_plus"), "contribution": 0.35},
-                {"name": "인구가중 격자 접근성 부족", "value": record.get("grid_population_weighted_accessibility_lack_score"), "contribution": 0.25},
-                {"name": "녹지율", "value": record.get("green_ratio_percent"), "contribution": 0.15},
+                {"name": f["name"], "value": f["score"], "contribution": f["weight"]}
+                for f in record.get("risk_driver_breakdown", [])
             ],
             "vulnerable_population": elderly,
         },
         "accessibility": {
-            "facility_score": float(record.get("grid_population_weighted_accessibility_index") or record.get("grid_accessibility_index_exp_d_300") or 0.0) * 100.0,
+            "facility_score": float(record.get("grid_population_weighted_accessibility_index") or 0.0) * 100.0,
             "nearest_shelter_distance_m": float(record.get("grid_mean_nearest_shelter_distance_m") or 0.0),
             "underserved_population": int(elderly * max(0.0, 1.0 - coverage / 100.0)),
             "coverage_rate": coverage,
-            "blind_spot": coverage < 80.0,
+            "blind_spot": coverage < 70.0,
             "blind_spot_count": 0,
             "existing_facilities": [],
             "map_center": {"latitude": 35.87, "longitude": 128.60},
@@ -407,10 +590,10 @@ def build_ai_briefing(payload: dict) -> dict:
         "optimization": {
             "budget": int(payload.get("budget") or 0),
             "max_facilities": int(payload.get("max_facilities") or 0),
-            "total_estimated_cost": 40_000_000,
+            "total_estimated_cost": 42_000_000,
             "recommended_locations": candidates,
             "before": {"coverage_rate": coverage, "underserved_population": int(elderly * max(0.0, 1.0 - coverage / 100.0)), "blind_spot_count": 0},
-            "after": {"coverage_rate": min(100.0, coverage + 15.0), "underserved_population": int(elderly * max(0.0, .85 - coverage / 100.0)), "blind_spot_count": 0},
+            "after": {"coverage_rate": min(100.0, coverage + 25.0), "underserved_population": int(elderly * max(0.0, .75 - coverage / 100.0)), "blind_spot_count": 0},
         },
     }
     policy = AlanPolicyClient().recommend_policy(analysis_result)
