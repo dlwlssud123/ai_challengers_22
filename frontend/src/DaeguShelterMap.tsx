@@ -432,6 +432,26 @@ export function DaeguShelterMap({
     () => readViewport(storageKey, initialCenter, initialZoom),
     [initialCenter, initialZoom, storageKey],
   );
+  const legendTitle = metricMode === 'accessibility'
+    ? '쉼터 접근성 등급'
+    : metricMode === 'future-risk'
+      ? '온열질환 위험 등급'
+      : '종합 취약도 등급';
+  const legendItems = metricMode === 'accessibility'
+    ? [
+        ['portable-legend-vuln-severe', '심각 (0~20)'],
+        ['portable-legend-vuln-high', '위험 (20~40)'],
+        ['portable-legend-vuln-mid', '주의 (40~60)'],
+        ['portable-legend-vuln-moderate', '보통 (60~80)'],
+        ['portable-legend-vuln-low', '양호 (80~100)'],
+      ]
+    : [
+        ['portable-legend-vuln-severe', '심각 (80~100)'],
+        ['portable-legend-vuln-high', '위험 (60~80)'],
+        ['portable-legend-vuln-mid', '주의 (40~60)'],
+        ['portable-legend-vuln-moderate', '보통 (20~40)'],
+        ['portable-legend-vuln-low', '양호 (0~20)'],
+      ];
   const [selectedShelter, setSelectedShelter] = React.useState<Shelter | null>(null);
   const selectShelter = React.useCallback((shelter: Shelter) => {
     setSelectedShelter(shelter);
@@ -631,12 +651,10 @@ export function DaeguShelterMap({
 
       {showLegend && (
         <div className="portable-map-legend" aria-hidden="true">
-          <b>폭염 취약도 등급</b>
-          <span><i className="portable-legend-vuln-severe" />심각 (80~100)</span>
-          <span><i className="portable-legend-vuln-high" />위험 (60~80)</span>
-          <span><i className="portable-legend-vuln-mid" />주의 (40~60)</span>
-          <span><i className="portable-legend-vuln-moderate" />보통 (20~40)</span>
-          <span><i className="portable-legend-vuln-low" />양호 (0~20)</span>
+          <b>{legendTitle}</b>
+          {legendItems.map(([className, label]) => (
+            <span key={className}><i className={className} />{label}</span>
+          ))}
           <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.12)', margin: '4px 0' }} />
           <span><i className="portable-legend-radius" />쉼터 500m 반경</span>
           <span><i className="portable-legend-cluster" />쉼터 군집</span>
