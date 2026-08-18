@@ -193,11 +193,11 @@
 .portable-legend-city     { border-top: 4.8px solid #0f1f2c; }
 .portable-legend-district { border-top: 2.8px solid #2c4455; border-style: dashed; }
 .portable-legend-dong     { width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.5); background: rgba(220,38,38,0.55); border-radius: 2px; }
-.portable-legend-vuln-severe   { width: 14px; height: 10px; background: rgba(239, 68, 68, 0.9); border-radius: 2px; }
-.portable-legend-vuln-high     { width: 14px; height: 10px; background: rgba(249, 115, 22, 0.9); border-radius: 2px; }
-.portable-legend-vuln-mid      { width: 14px; height: 10px; background: rgba(234, 179, 8, 0.85); border-radius: 2px; }
-.portable-legend-vuln-moderate { width: 14px; height: 10px; background: rgba(6, 182, 212, 0.85); border-radius: 2px; }
-.portable-legend-vuln-low      { width: 14px; height: 10px; background: rgba(34, 197, 94, 0.85); border-radius: 2px; }
+.portable-legend-vuln-severe   { width: 14px; height: 10px; background: #dc2626; border-radius: 2px; }
+.portable-legend-vuln-high     { width: 14px; height: 10px; background: #f97316; border-radius: 2px; }
+.portable-legend-vuln-mid      { width: 14px; height: 10px; background: #eab308; border-radius: 2px; }
+.portable-legend-vuln-moderate { width: 14px; height: 10px; background: #0ea5e9; border-radius: 2px; }
+.portable-legend-vuln-low      { width: 14px; height: 10px; background: #22c55e; border-radius: 2px; }
 .portable-legend-radius   { width: 15px; height: 15px; border: 1.5px solid #43c8cc; border-radius: 50%; background: rgba(67, 200, 204, 0.15); }
 .portable-legend-cluster  { width: 15px; height: 15px; border: 1.5px solid #ff8b24; border-radius: 50%; background: rgba(255, 90, 43, 0.75); }
 
@@ -336,15 +336,15 @@
 }
 
 .dit-grade.vuln-moderate {
-  background: rgba(6, 182, 212, 0.18);
-  color: #22d3ee;
-  border: 1px solid rgba(6, 182, 212, 0.4);
+  background: rgba(14, 165, 233, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.45);
 }
 
 .dit-grade.vuln-safe {
-  background: rgba(34, 197, 94, 0.18);
+  background: rgba(34, 197, 94, 0.2);
   color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.4);
+  border: 1px solid rgba(34, 197, 94, 0.45);
 }
 
 .dit-grid {

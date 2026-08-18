@@ -290,38 +290,40 @@ def load_shades() -> list[dict[str, Any]]:
 
 
 def score_color(score: float | None) -> list[int]:
-    """0~100 정규화 지수에 따른 뚜렷한 히트맵 색상 매핑"""
+    """0~100 정규화 지수에 따른 명확한 5색 히트맵 색상 매핑"""
     if score is None:
         return [100, 116, 139, 70]
-    # 심각 (빨강)
-    if score >= 80:
-        return [239, 68, 68, 215]
-    # 위험 (주황)
-    if score >= 60:
-        return [249, 115, 22, 205]
-    # 주의 (황색)
-    if score >= 40:
-        return [234, 179, 8, 190]
-    # 보통 (청록)
-    if score >= 20:
-        return [6, 182, 212, 175]
-    # 양호 (녹색)
-    return [34, 197, 94, 170]
+    val = float(score)
+    # 심각 (80~100: 빨강)
+    if val >= 80:
+        return [220, 38, 38, 220]
+    # 위험 (60~80: 주황)
+    if val >= 60:
+        return [249, 115, 22, 210]
+    # 주의 (40~60: 황색/노랑)
+    if val >= 40:
+        return [234, 179, 8, 200]
+    # 보통 (20~40: 선명한 하늘색/파랑)
+    if val >= 20:
+        return [14, 165, 233, 195]
+    # 양호 (0~20: 선명한 초록)
+    return [34, 197, 94, 190]
 
 
 def access_color(index: float | None) -> list[int]:
-    """접근성 지표 컬러링 (0~100 백분위수 기준)"""
+    """접근성 지표 컬러링"""
     if index is None:
         return [100, 116, 139, 70]
-    if index >= 80:
-        return [34, 197, 94, 205]  # 매우 우수 (녹색)
-    if index >= 60:
-        return [6, 182, 212, 195]  # 우수 (청록)
-    if index >= 40:
-        return [234, 179, 8, 185]  # 보통 (황색)
-    if index >= 20:
-        return [249, 115, 22, 195]  # 부족 (주황)
-    return [239, 68, 68, 215]      # 심각한 부족 (빨강)
+    val = float(index)
+    if val >= 80:
+        return [34, 197, 94, 200]  # 매우 우수 (녹색)
+    if val >= 60:
+        return [14, 165, 233, 195]  # 우수 (하늘색)
+    if val >= 40:
+        return [234, 179, 8, 195]  # 보통 (황색)
+    if val >= 20:
+        return [249, 115, 22, 205]  # 부족 (주황)
+    return [220, 38, 38, 220]      # 심각한 부족 (빨강)
 
 
 def find_record(records: list[dict[str, Any]], full_name: str) -> dict[str, Any] | None:
@@ -340,9 +342,9 @@ def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
         props = dict(feature.get("properties") or {})
         record = find_record(records, props.get("adm_nm", ""))
         if record:
-            c_score = record.get("composite_risk_score", 50.0)
-            access_pct = 100.0 - record.get("accessibility_lack_pct", 50.0)
-            future_pct = record.get("future_climate_risk_pct", 50.0)
+            c_score = float(record.get("composite_risk_score", 50.0))
+            access_pct = float(100.0 - record.get("accessibility_lack_pct", 50.0))
+            future_pct = float(record.get("future_climate_risk_pct", 50.0))
 
             if metric == "accessibility":
                 map_score = access_pct
@@ -351,6 +353,7 @@ def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
                 map_score = future_pct
                 color = score_color(future_pct)
             else:
+                # 기본: 취약도 + 접근성 종합 위험도 히트맵
                 map_score = c_score
                 color = score_color(c_score)
 

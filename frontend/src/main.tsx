@@ -6,7 +6,6 @@ import './styles.css';
 // ── Types ──────────────────────────────────────────
 type MetricMode = 'vulnerability' | 'accessibility' | 'future-risk';
 type MainNavKey = 'dashboard' | 'analysis' | 'policy';
-type AnalysisSubView = 'comprehensive' | 'accessibility' | 'future';
 
 type Kpis = {
   dong_count: number;
@@ -211,7 +210,7 @@ function AppShelterMap({
   selectedDistrict,
   onDistrictClick,
   onSelect,
-  height = '500px',
+  height = '520px',
 }: {
   data: Overview;
   selectedDistrict?: string;
@@ -313,8 +312,8 @@ function DashboardView({
     <div className="page">
       <PageHeader
         title="대구 폭염 종합 현황 대시보드"
-        subtitle="대구시 150개 행정동의 폭염 취약도, 고령인구 밀집도, 쉼터 접근권을 통합 진단합니다"
-        tag="✦ 정규화 종합 지수 산출"
+        subtitle="대구시 150개 행정동의 취약인구 분포, 무더위쉼터 보행 접근권, 2030 기후위험을 결합한 통합 히트맵"
+        tag="✦ 취약도+접근성 통합 지수"
       />
 
       {/* KPI 그리드 */}
@@ -330,12 +329,12 @@ function DashboardView({
         <section className="card map-card">
           <div className="card-header">
             <div>
-              <div className="card-title">대구 폭염 종합 위험도 히트맵</div>
+              <div className="card-title">대구 폭염 종합 취약도 & 접근성 통합 히트맵</div>
               <div style={{ fontSize: 11, color: '#8295a4', marginTop: 2 }}>
-                고령화율(35%) + 쉼터접근성 부족(30%) + 미래위험(20%) + 열환경(15%) 가중합 지수
+                고령인구율 + 500m 쉼터 미도달 결여도 + 2030 미래 열노출을 융합한 단일 위험도 히트맵
               </div>
             </div>
-            <span style={{ fontSize: 12, color: '#94a3b8' }}>💡 행정동에 마우스를 올리거나 클릭하세요</span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>💡 행정동 마우스 오버 시 상세 툴팁</span>
           </div>
           <div className="map-body" style={{ minHeight: 480 }}>
             <div className="map-stage" style={{ minHeight: 480, padding: 0 }}>
@@ -359,15 +358,15 @@ function DashboardView({
             <div className="insights">
               <div className="insight-row">
                 <div className="insight-check">1</div>
-                <div><b>취약도 편차 명확화:</b> 고령인구 비율과 500m 쉼터 사각지대가 겹치는 노후 원도심의 위험도가 80점 이상으로 집중됩니다.</div>
+                <div><b>취약도 편차 정상화:</b> 고령인구 비율과 500m 쉼터 사각지대가 겹치는 노후 원도심의 위험도가 80점 이상(빨간색)으로 뚜렷하게 식별됩니다.</div>
               </div>
               <div className="insight-row">
                 <div className="insight-check">2</div>
-                <div><b>주요 취약 요인:</b> 고령인구 비율(r=+0.75)과 쉼터 접근거리(r=+0.62)가 폭염 피해의 가장 지배적인 위험 요인입니다.</div>
+                <div><b>5단계 색상 구분:</b> 심각(빨강) · 위험(주황) · 주의(노랑) · 보통(파랑) · 양호(초록)으로 동별 상태가 직관적으로 시각화됩니다.</div>
               </div>
               <div className="insight-row">
                 <div className="insight-check">3</div>
-                <div><b>정책 권고:</b> 상위 6개 위험 지역에 스마트 쿨링 쉼터 배치 시 대구시 전체 사각지대 고령자의 약 28%를 즉시 보호 가능합니다.</div>
+                <div><b>우선 정책 타겟:</b> 상위 위험 행정동에 스마트 쿨링 쉼터 배치 시 대구시 전체 사각지대 고령자의 약 28%를 즉시 보호 가능합니다.</div>
               </div>
             </div>
           </section>
@@ -376,7 +375,7 @@ function DashboardView({
           <section className="card">
             <div className="card-header" style={{ justifyContent: 'space-between' }}>
               <div className="card-title">집중 관리 필요 지역 (TOP 6)</div>
-              <button className="text-link-btn" onClick={onNavigateDetail}>심층 분석 바로가기 →</button>
+              <button className="text-link-btn" onClick={onNavigateDetail}>상세 분석 바로가기 →</button>
             </div>
             <div className="rank-list">
               {topDongs.map((d, i) => (
@@ -396,7 +395,9 @@ function DashboardView({
                     <b style={{ fontSize: 13, color: '#ff8b24' }}>{fmtScore(d.composite_risk_score)}<small style={{ fontSize: 10 }}>점</small></b>
                     <MiniBar value={d.composite_risk_score ?? 0} max={100} color={
                       (d.composite_risk_score ?? 0) >= 80 ? '#ef4444' :
-                      (d.composite_risk_score ?? 0) >= 60 ? '#f97316' : '#eab308'
+                      (d.composite_risk_score ?? 0) >= 60 ? '#f97316' :
+                      (d.composite_risk_score ?? 0) >= 40 ? '#eab308' :
+                      (d.composite_risk_score ?? 0) >= 20 ? '#0ea5e9' : '#22c55e'
                     } />
                   </div>
                 </div>
@@ -415,7 +416,7 @@ function DashboardView({
               {getGradeBadge(selected.composite_risk_grade, selected.composite_risk_score)}
             </div>
             <button className="primary-button" style={{ padding: '6px 14px', fontSize: 12 }} onClick={onNavigateDetail}>
-              🔍 이 동의 취약 원인 심층 분석 보기
+              🔍 이 동의 원인 심층 분석 보기
             </button>
           </div>
           <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
@@ -440,7 +441,7 @@ function DashboardView({
 }
 
 // ──────────────────────────────────────────────────
-// 2. 상세 분석 (Detailed Analysis: 취약도/접근성/2030예측 통합)
+// 2. 상세 분석 (Detailed Analysis: 취약도+접근성 단일 통합 뷰)
 // ──────────────────────────────────────────────────
 function DetailedAnalysisView({
   data,
@@ -448,16 +449,12 @@ function DetailedAnalysisView({
   selected,
   onDistrictClick,
   onSelect,
-  subView,
-  setSubView,
 }: {
   data: Overview;
   selectedDistrict?: string;
   selected: District;
   onDistrictClick: (name: string) => void;
   onSelect: (d: District) => void;
-  subView: AnalysisSubView;
-  setSubView: (v: AnalysisSubView) => void;
 }) {
   const drivers = selected.risk_driver_breakdown || [
     { name: '고령인구 비율', score: selected.elderly_vulnerability_pct || 75, weight: 0.35, desc: '60세 이상 고령자 밀집' },
@@ -469,62 +466,37 @@ function DetailedAnalysisView({
   return (
     <div className="page">
       <PageHeader
-        title="행정동 심층 원인 진단 & 다차원 분석"
-        subtitle="폭염 취약도, 보행 접근성, 2030 기후 미래 예측을 결합하여 특정 행정동의 취약 원인을 분해합니다"
-        tag="🔍 심층 진단 뷰"
+        title="행정동 취약성 & 접근성 심층 원인 진단"
+        subtitle="취약도와 시설 접근권을 통합한 단일 히트맵에서 특정 동을 클릭하여 왜 취약한지 4대 원인을 진단합니다"
+        tag="🔍 원스톱 통합 진단"
       />
 
-      {/* 상단 서브 뷰 토글 탭 */}
-      <div className="subview-tab-wrap">
-        <button
-          className={`subview-tab${subView === 'comprehensive' ? ' active' : ''}`}
-          onClick={() => setSubView('comprehensive')}
-        >
-          🔥 종합 폭염 취약도 & 원인 분해
-        </button>
-        <button
-          className={`subview-tab${subView === 'accessibility' ? ' active' : ''}`}
-          onClick={() => setSubView('accessibility')}
-        >
-          🚶 쉼터 보행 접근성 & 사각지대
-        </button>
-        <button
-          className={`subview-tab${subView === 'future' ? ' active' : ''}`}
-          onClick={() => setSubView('future')}
-        >
-          🔮 2030 기후변화 온열질환 예측
-        </button>
-      </div>
-
       <div className="dashboard-main" style={{ marginTop: 12 }}>
-        {/* 좌측: 실시간 대구 지도 */}
+        {/* 좌측: 실시간 취약도+접근성 통합 대구 지도 */}
         <section className="card map-card">
           <div className="card-header">
             <div>
-              <div className="card-title">
-                {subView === 'comprehensive' && '대구시 행정동별 종합 폭염 취약도'}
-                {subView === 'accessibility' && '무더위쉼터 500m 보행권 & 접근성 결여도'}
-                {subView === 'future' && '2030 기후변화 시나리오 온열질환 위험도'}
-              </div>
+              <div className="card-title">대구시 폭염 취약도 & 쉼터 접근권 통합 히트맵</div>
               <div style={{ fontSize: 11, color: '#8295a4', marginTop: 2 }}>
-                현재 선택: <b style={{ color: '#f8b04c' }}>{selected.full_adm_name}</b> (클릭하여 변경)
+                현재 선택: <b style={{ color: '#f8b04c' }}>{selected.full_adm_name}</b> (지도에서 다른 동을 클릭하여 변경)
               </div>
             </div>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>빨강(심각) ➔ 주황 ➔ 노랑(주의) ➔ 파랑(보통) ➔ 초록(양호)</span>
           </div>
-          <div className="map-body" style={{ minHeight: 520 }}>
-            <div className="map-stage" style={{ minHeight: 520, padding: 0 }}>
+          <div className="map-body" style={{ minHeight: 540 }}>
+            <div className="map-stage" style={{ minHeight: 540, padding: 0 }}>
               <AppShelterMap
                 data={data}
                 selectedDistrict={selectedDistrict}
                 onDistrictClick={onDistrictClick}
                 onSelect={onSelect}
-                height="520px"
+                height="540px"
               />
             </div>
           </div>
         </section>
 
-        {/* 우측: 선택된 행정동의 심층 진단 패널 */}
+        {/* 우측: 선택된 행정동의 원인 진단 및 세부 지표 통합 패널 */}
         <div className="dashboard-side">
           <section className="card">
             <div className="card-header" style={{ justifyContent: 'space-between' }}>
@@ -538,9 +510,9 @@ function DetailedAnalysisView({
             {/* 왜 취약한가? 원인 분해 섹션 */}
             <div style={{ padding: '0 16px 14px' }}>
               <div className="cause-box">
-                <div className="cause-title">💡 왜 이 동이 취약한가? (주요 원인 진단)</div>
+                <div className="cause-title">💡 왜 이 동이 취약한가? (1순위 원인 진단)</div>
                 <div className="cause-driver-name">
-                  1순위 요인: <b>{selected.primary_risk_driver || '고령인구 밀집 및 취약'}</b>
+                  핵심 취약 축: <b>{selected.primary_risk_driver || '고령인구 밀집 및 취약'}</b>
                 </div>
                 <div className="cause-desc">
                   {selected.primary_driver_desc || '60세 이상 고령층 비율이 높고 무더위쉼터까지의 보행 이동 거리가 멀어 열사병 위험 노출도가 큽니다.'}
@@ -554,12 +526,22 @@ function DetailedAnalysisView({
                   <div key={d.name} style={{ margin: '10px 0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#a0b3c2' }}>
                       <span>{d.name} <small style={{ color: '#6e8392' }}>({(d.weight * 100).toFixed(0)}% 가중)</small></span>
-                      <b style={{ color: d.score >= 75 ? '#ef4444' : d.score >= 50 ? '#f97316' : '#38bdf8' }}>{fmtScore(d.score)}%위</b>
+                      <b style={{
+                        color: d.score >= 80 ? '#ef4444' :
+                               d.score >= 60 ? '#f97316' :
+                               d.score >= 40 ? '#eab308' :
+                               d.score >= 20 ? '#0ea5e9' : '#22c55e'
+                      }}>{fmtScore(d.score)}%위</b>
                     </div>
                     <MiniBar
                       value={d.score}
                       max={100}
-                      color={d.score >= 75 ? '#ef4444' : d.score >= 50 ? '#f97316' : '#38bdf8'}
+                      color={
+                        d.score >= 80 ? '#ef4444' :
+                        d.score >= 60 ? '#f97316' :
+                        d.score >= 40 ? '#eab308' :
+                        d.score >= 20 ? '#0ea5e9' : '#22c55e'
+                      }
                     />
                   </div>
                 ))}
@@ -567,55 +549,25 @@ function DetailedAnalysisView({
             </div>
           </section>
 
-          {/* 서브 뷰별 상세 카드 */}
+          {/* 통합 세부 지표 카드 */}
           <section className="card">
             <div className="card-header">
-              <div className="card-title">
-                {subView === 'comprehensive' && '📊 핵심 취약 지표 요약'}
-                {subView === 'accessibility' && '🚶 쉼터 접근성 세부 진단'}
-                {subView === 'future' && '🔮 2030 기후 시나리오 예측치'}
-              </div>
+              <div className="card-title">📊 취약도 · 접근성 · 2030 미래 지표 통합 요약</div>
             </div>
-            <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {subView === 'comprehensive' && [
-                ['종합 위험지수', `${fmtScore(selected.composite_risk_score)}점`],
-                ['고령인구 비율', `${fmtScore(selected.elderly_ratio_60_plus * 100)}%`],
-                ['쉼터 500m 커버리지', `${fmtScore(selected.coverage_ratio_500m_area * 100)}%`],
-                ['녹지율', `${fmtScore(selected.green_ratio_percent)}%`],
-                ['쉼터 수', `${selected.shelter_count}곳`],
-                ['평균 접근거리', `${fmtNumber(selected.grid_mean_nearest_shelter_distance_m)}m`],
-              ].map(([k, v]) => (
-                <div key={k} style={{ background: '#0e1a24', border: '1px solid #233748', borderRadius: 8, padding: '9px 11px' }}>
+            <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+              {[
+                ['종합 위험지수', `${fmtScore(selected.composite_risk_score)}점`, '#ff8b24'],
+                ['고령인구 비율', `${fmtScore(selected.elderly_ratio_60_plus * 100)}% (${fmtNumber(selected.elderly_population_60_plus)}명)`, '#f87171'],
+                ['500m 쉼터 커버리지', `${fmtScore(selected.coverage_ratio_500m_area * 100)}%`, '#eab308'],
+                ['사각지대 고령인구', `${fmtNumber(Math.round(selected.elderly_population_60_plus * Math.max(0, 1 - selected.coverage_ratio_500m_area)))}명`, '#f87171'],
+                ['평균 쉼터 거리', `${fmtNumber(selected.grid_mean_nearest_shelter_distance_m)}m`, '#38bdf8'],
+                ['무더위쉼터 수', `${selected.shelter_count}곳`, '#4ade80'],
+                ['2030 온열환자 예측', `${selected.future_expected_patients ? fmtScore(selected.future_expected_patients) + '명' : '추정 3.8명'}`, '#a855f7'],
+                ['녹지율', `${fmtScore(selected.green_ratio_percent)}%`, '#22c55e'],
+              ].map(([k, v, col]) => (
+                <div key={k} style={{ background: '#0e1a24', border: '1px solid #233748', borderRadius: 8, padding: '8px 10px' }}>
                   <div style={{ fontSize: 10, color: '#889ea8' }}>{k}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, marginTop: 3 }}>{v}</div>
-                </div>
-              ))}
-
-              {subView === 'accessibility' && [
-                ['500m 보행 커버리지', `${fmtScore(selected.coverage_ratio_500m_area * 100)}%`],
-                ['사각지대 고령인구', `${fmtNumber(Math.round(selected.elderly_population_60_plus * Math.max(0, 1 - selected.coverage_ratio_500m_area)))}명`],
-                ['평균 쉼터 거리', `${fmtNumber(selected.grid_mean_nearest_shelter_distance_m)}m`],
-                ['500m 밖 거주비율', `${fmtScore((selected.grid_beyond_500m_ratio || 0.4) * 100)}%`],
-                ['총 수용 가능 인원', `${fmtNumber(selected.shelter_count * 45)}명`],
-                ['그늘막 설치 개수', `SGIS 연동`],
-              ].map(([k, v]) => (
-                <div key={k} style={{ background: '#0e1a24', border: '1px solid #233748', borderRadius: 8, padding: '9px 11px' }}>
-                  <div style={{ fontSize: 10, color: '#889ea8' }}>{k}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, marginTop: 3, color: '#38bdf8' }}>{v}</div>
-                </div>
-              ))}
-
-              {subView === 'future' && [
-                ['2030 예상 온열환자', `${selected.future_expected_patients ? fmtScore(selected.future_expected_patients) + '명' : '추정 3.8명'}`],
-                ['1만명당 발생률', `${selected.future_heat_incidence_per_10k ? fmtScore(selected.future_heat_incidence_per_10k) + '명' : '추정 2.1명'}`],
-                ['예상 폭염일수', `${selected.future_heatwave_days ? fmtScore(selected.future_heatwave_days) + '일' : '연 28일'}`],
-                ['예상 열대야일수', `${selected.future_tropical_night_days ? fmtScore(selected.future_tropical_night_days) + '일' : '연 22일'}`],
-                ['최대 연속폭염일', `${selected.future_max_heat_streak_days ? fmtScore(selected.future_max_heat_streak_days) + '일' : '14일 연속'}`],
-                ['모델 신뢰도', `${selected.future_risk_confidence_grade || 'A등급 (높음)'}`],
-              ].map(([k, v]) => (
-                <div key={k} style={{ background: '#0e1a24', border: '1px solid #233748', borderRadius: 8, padding: '9px 11px' }}>
-                  <div style={{ fontSize: 10, color: '#889ea8' }}>{k}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, marginTop: 3, color: '#f87171' }}>{v}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, marginTop: 3, color: col }}>{v}</div>
                 </div>
               ))}
             </div>
@@ -882,11 +834,11 @@ function PolicyOptimizationView({
 }
 
 // ──────────────────────────────────────────────────
-// Main Navigation Definition (단 3개의 핵심 메뉴로 통합)
+// Main Navigation Definition (3대 핵심 메뉴)
 // ──────────────────────────────────────────────────
 const NAV_ITEMS: { key: MainNavKey; icon: string; label: string; desc: string }[] = [
   { key: 'dashboard', icon: '📊', label: '대시보드', desc: '대구 전체 요약 & 히트맵' },
-  { key: 'analysis',  icon: '🔍', label: '상세 분석', desc: '취약 원인 · 쉼터 · 2030예측' },
+  { key: 'analysis',  icon: '🔍', label: '상세 분석', desc: '취약성 & 접근성 원인 진단' },
   { key: 'policy',    icon: '💡', label: '정책 & 예산', desc: 'What-If 시뮬레이션 & AI브리핑' },
 ];
 
@@ -895,8 +847,6 @@ const NAV_ITEMS: { key: MainNavKey; icon: string; label: string; desc: string }[
 // ──────────────────────────────────────────────────
 function App() {
   const [navKey, setNavKey] = React.useState<MainNavKey>('dashboard');
-  const [metric, setMetric] = React.useState<MetricMode>('vulnerability');
-  const [subView, setSubView] = React.useState<AnalysisSubView>('comprehensive');
   const [overview, setOverview] = React.useState<Overview | null>(null);
   const [selected, setSelected] = React.useState<District | null>(null);
   const [selectedDistrict, setSelectedDistrict] = React.useState<string | undefined>();
@@ -911,16 +861,16 @@ function App() {
   const [briefing, setBriefing] = React.useState<any | null>(null);
   const [loadingBrief, setLoadingBrief] = React.useState(false);
 
-  // Load Overview data
+  // Load Overview data (기본 취약도+접근성 종합 히트맵 데이터 로드)
   React.useEffect(() => {
-    api.overview(metric).then(data => {
+    api.overview('vulnerability').then(data => {
       setOverview(data);
       setSelected(curr => curr || data.districts[0]);
     }).catch(err => {
       console.error(err);
       showToast('데이터를 불러오지 못했습니다.');
     });
-  }, [metric]);
+  }, []);
 
   // Run What-If on params change
   const runWhatIf = React.useCallback(async () => {
@@ -954,18 +904,6 @@ function App() {
       showToast('AI 브리핑 생성에 실패했습니다.');
     } finally {
       setLoadingBrief(false);
-    }
-  };
-
-  // Switch metric when subview changes
-  const handleSubViewChange = (sv: AnalysisSubView) => {
-    setSubView(sv);
-    if (sv === 'accessibility') {
-      setMetric('accessibility');
-    } else if (sv === 'future') {
-      setMetric('future-risk');
-    } else {
-      setMetric('vulnerability');
     }
   };
 
@@ -1008,8 +946,6 @@ function App() {
             selected={selected || overview.districts[0]}
             onDistrictClick={handleDistrictClick}
             onSelect={setSelected}
-            subView={subView}
-            setSubView={handleSubViewChange}
           />
         );
       case 'policy':
@@ -1069,7 +1005,7 @@ function App() {
           </div>
           <div style={{ marginTop: 8, fontSize: 10, color: '#687d8e', lineHeight: 1.5 }}>
             SGIS 행정동 경계 · 실시간 시설 API 연동<br />
-            정규화 종합 위험지수(0~100) 반영
+            취약도+접근성 통합 위험지표(0~100)
           </div>
         </div>
       </aside>
@@ -1089,7 +1025,7 @@ function App() {
               ⬇️ 행정동 요약 CSV
             </a>
             <div className="divider" />
-            <button className="icon-button" aria-label="알림" onClick={() => showToast('신규 폭염 경보: 대구 전역 주의보 발령 중')}>🔔</button>
+            <button className="icon-button" aria-label="알림" onClick={() => showToast('대구 전역 폭염 종합 지수 실시간 분석 중')}>🔔</button>
             <button className="icon-button" aria-label="사용자">👤</button>
           </div>
         </header>
