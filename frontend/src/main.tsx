@@ -11,6 +11,7 @@ type Kpis = {
   population: number;
   elderly_population: number;
   shelter_count: number;
+  shade_count: number;
   mean_grid_accessibility: number;
   mean_green_ratio: number;
 };
@@ -51,6 +52,7 @@ type Overview = {
   boundaries: { type: 'FeatureCollection'; features: Feature[] };
   districts: District[];
   shelters: Array<{ shelter_id: string; name: string; address: string; latitude: number; longitude: number; capacity: number }>;
+  shades: Array<{ facility_id: string; shelter_id: string; name: string; address: string; latitude: number; longitude: number; shelter_type: string }>;
 };
 
 const api = {
@@ -150,7 +152,11 @@ function MapView({ data, selected, onSelect }: { data: Overview; selected?: stri
             </path>
           );
         })}
-        {data.shelters.slice(0, 600).map((shelter) => {
+        {data.shades.slice(0, 900).map((shade) => {
+          const [x, y] = project([shade.longitude, shade.latitude]);
+          return <rect key={shade.facility_id || shade.shelter_id} x={x - 2.2} y={y - 2.2} width="4.4" height="4.4" className="shade-dot"><title>{shade.name}</title></rect>;
+        })}
+        {data.shelters.slice(0, 900).map((shelter) => {
           const [x, y] = project([shelter.longitude, shelter.latitude]);
           return <circle key={shelter.shelter_id} cx={x} cy={y} r="2.2" className="shelter-dot"><title>{shelter.name}</title></circle>;
         })}
@@ -161,6 +167,7 @@ function MapView({ data, selected, onSelect }: { data: Overview; selected?: stri
         <span><i className="swatch amber" />주의</span>
         <span><i className="swatch blue" />낮음</span>
         <span><i className="swatch dot" />쉼터</span>
+        <span><i className="swatch shade" />그늘막</span>
       </div>
     </div>
   );
@@ -218,7 +225,7 @@ function App() {
           <a><BarChart3 size={19} />예산 배분</a>
           <a><Bot size={19} />정책 브리핑</a>
         </nav>
-        <div className="sidebar-foot">대구광역시 폭염 대응 정책 지원 시스템<br />SGIS 경계 · 공공 API 쉼터 · 100m 격자 접근성</div>
+        <div className="sidebar-foot">대구광역시 폭염 대응 정책 지원 시스템<br />SGIS 경계 · API/파일 시설 데이터 · 100m 격자 접근성</div>
       </aside>
       <section className="workspace">
         <header className="topbar">
@@ -234,8 +241,8 @@ function App() {
           <section className="kpi-grid">
             <MetricCard icon={<MapPin />} label="행정동" value={`${overview.kpis.dong_count}개`} note="SGIS 전체 경계" />
             <MetricCard icon={<Users />} label="60세 이상 고령인구" value={`${fmtNumber(overview.kpis.elderly_population)}명`} />
-            <MetricCard icon={<Activity />} label="무더위쉼터" value={`${fmtNumber(overview.kpis.shelter_count)}곳`} note="공공 API" />
-            <MetricCard icon={<BarChart3 />} label="평균 인구가중 접근성" value={`${(overview.kpis.mean_grid_accessibility * 100).toFixed(1)}%`} />
+            <MetricCard icon={<Activity />} label="무더위쉼터" value={`${fmtNumber(overview.kpis.shelter_count)}곳`} note="API 우선" />
+            <MetricCard icon={<MapPin />} label="그늘막" value={`${fmtNumber(overview.kpis.shade_count)}곳`} note="API 우선" />
           </section>
           <section className="main-grid">
             <div className="card map-card"><div className="card-header"><b>{metric === 'vulnerability' ? '종합 취약도 지도' : '100m 격자 접근성 지도'}</b><span>행정동을 클릭하세요</span></div><MapView data={overview} selected={selected?.sgis_adm_cd} onSelect={setSelected} /></div>

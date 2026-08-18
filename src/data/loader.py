@@ -15,6 +15,7 @@ from src.config import CACHE_DIR, DATA_DIR, PROCESSED_DIR, PROJECT_ROOT, RAW_DIR
 from src.data.candidates import generate_grid_candidates, load_candidate_file
 from src.data.demo import DEFAULT_DONG_NAMES, make_demo_areas
 from src.data.http import DataSourceError, JsonCache
+from src.data.heat_facilities import load_local_heat_shelters
 from src.data.kma_surface import absolute_heat_hazard_score, fetch_latest_daegu_weather
 from src.data.safety_shelters import (
     CACHE_KEY as SAFETY_SHELTER_CACHE_KEY,
@@ -141,10 +142,14 @@ def build_source_dataset(settings: Settings) -> DatasetBundle:
     if shelters.empty:
         try:
             shelter_path = discover_shelter_file(RAW_DIR)
-            fallback_shelters = load_shelters(shelter_path)
+            fallback_shelters = (
+                load_local_heat_shelters(shelter_path)
+                if shelter_path.suffix.lower() in {".xlsx", ".xls"}
+                else load_shelters(shelter_path)
+            )
             shelters = fallback_shelters
             citywide_shelters = fallback_shelters
-            shelter_source_mode = "local_csv"
+            shelter_source_mode = "local_file"
         except FileNotFoundError:
             if shelter_warning:
                 raise DataSourceError(

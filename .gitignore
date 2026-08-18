@@ -12,6 +12,7 @@ data/cache/
 data/processed/*
 !data/processed/daegu_all_dong_accessibility_summary.csv
 !data/processed/shelters.geojson
+!data/processed/shades.geojson
 data/_census_reqdoc_*/
 data/_grid_border_grid_*/
 heatwave-project (4)/

@@ -13,6 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import PROCESSED_DIR, Settings  # noqa: E402
 from src.pipeline import run_analysis  # noqa: E402
+from src.data.shades import load_shades  # noqa: E402
 
 
 def main() -> int:
@@ -22,6 +23,7 @@ def main() -> int:
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     artifacts.areas.to_file(PROCESSED_DIR / "areas.geojson", driver="GeoJSON")
     artifacts.shelters.to_file(PROCESSED_DIR / "shelters.geojson", driver="GeoJSON")
+    load_shades(settings).to_file(PROCESSED_DIR / "shades.geojson", driver="GeoJSON")
     artifacts.candidates.to_file(PROCESSED_DIR / "candidates.geojson", driver="GeoJSON")
     artifacts.blindspots.to_file(PROCESSED_DIR / "blindspots.geojson", driver="GeoJSON")
     (PROCESSED_DIR / "metadata.json").write_text(

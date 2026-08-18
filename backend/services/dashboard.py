@@ -11,6 +11,7 @@ from src.alan_client import AlanPolicyClient
 from src.analysis.district_allocation import allocate_facilities_by_priority
 from src.config import PROCESSED_DIR, Settings
 from src.data.loader import build_source_dataset
+from src.data.shades import load_shades as load_shade_layer
 from src.sgis_client import SGISClient
 
 SUMMARY_CSV = PROCESSED_DIR / "daegu_all_dong_accessibility_summary.csv"
@@ -47,6 +48,14 @@ def load_boundaries() -> dict:
     )
 
 
+def _points_to_records(points) -> list[dict[str, Any]]:
+    frame = pd.DataFrame(points.drop(columns="geometry", errors="ignore"))
+    frame["longitude"] = points.geometry.x
+    frame["latitude"] = points.geometry.y
+    frame = frame.replace({np.nan: None})
+    return frame.to_dict("records")
+
+
 @lru_cache(maxsize=1)
 def load_shelters() -> list[dict[str, Any]]:
     processed_shelters = PROCESSED_DIR / "shelters.geojson"
@@ -57,11 +66,13 @@ def load_shelters() -> list[dict[str, Any]]:
     else:
         source = build_source_dataset(Settings.from_env())
         shelters = source.citywide_shelters.to_crs("EPSG:4326")
-    frame = pd.DataFrame(shelters.drop(columns="geometry", errors="ignore"))
-    frame["longitude"] = shelters.geometry.x
-    frame["latitude"] = shelters.geometry.y
-    frame = frame.replace({np.nan: None})
-    return frame.to_dict("records")
+    return _points_to_records(shelters)
+
+
+@lru_cache(maxsize=1)
+def load_shades() -> list[dict[str, Any]]:
+    shades = load_shade_layer(Settings.from_env()).to_crs("EPSG:4326")
+    return _points_to_records(shades)
 
 
 def score_color(score: float | None) -> list[int]:
@@ -149,13 +160,14 @@ def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
-def build_kpis(records: list[dict[str, Any]], shelters: list[dict[str, Any]]) -> dict[str, Any]:
+def build_kpis(records: list[dict[str, Any]], shelters: list[dict[str, Any]], shades: list[dict[str, Any]]) -> dict[str, Any]:
     frame = pd.DataFrame(records)
     return {
         "dong_count": int(len(frame)),
         "population": int(pd.to_numeric(frame["population"], errors="coerce").fillna(0).sum()),
         "elderly_population": int(pd.to_numeric(frame["elderly_population_60_plus"], errors="coerce").fillna(0).sum()),
         "shelter_count": int(len(shelters)),
+        "shade_count": int(len(shades)),
         "mean_grid_accessibility": float(pd.to_numeric(frame["grid_population_weighted_accessibility_index"], errors="coerce").mean()),
         "mean_green_ratio": float(pd.to_numeric(frame["green_ratio_percent"], errors="coerce").mean()),
     }
@@ -164,6 +176,7 @@ def build_kpis(records: list[dict[str, Any]], shelters: list[dict[str, Any]]) ->
 def build_overview(metric: str = "vulnerability") -> dict:
     records = load_summary_records()
     shelters = load_shelters()
+    shades = load_shades()
     return {
         "metadata": {
             "region": "대구광역시",
@@ -171,10 +184,11 @@ def build_overview(metric: str = "vulnerability") -> dict:
             "summary_file": str(SUMMARY_CSV),
             "boundary_source": "SGIS 2025 adm_cd=22 low_search=2",
         },
-        "kpis": build_kpis(records, shelters),
+        "kpis": build_kpis(records, shelters, shades),
         "boundaries": build_geojson(metric, records),
         "districts": records,
         "shelters": shelters,
+        "shades": shades,
     }
 
 

@@ -71,6 +71,10 @@ class Settings:
     sgis_adm_cd: str | None = None
     safety_data_shelter_api_url: str | None = None
     safety_data_service_key: str | None = None
+    data_go_kr_service_key: str | None = None
+    shade_standard_api_url: str | None = None
+    seogu_shade_api_url: str | None = None
+    donggu_shade_api_url: str | None = None
     kma_auth_key: str | None = None
     kma_surface_api_url: str | None = None
     openai_api_key: str | None = None
@@ -96,6 +100,10 @@ class Settings:
             sgis_adm_cd=_setting("SGIS_ADM_CD"),
             safety_data_shelter_api_url=_setting("SAFETY_DATA_SHELTER_API_URL"),
             safety_data_service_key=_setting("SAFETY_DATA_SERVICE_KEY"),
+            data_go_kr_service_key=_setting("DATA_GO_KR_SERVICE_KEY"),
+            shade_standard_api_url=_setting("SHADE_STANDARD_API_URL"),
+            seogu_shade_api_url=_setting("SEOGU_SHADE_API_URL"),
+            donggu_shade_api_url=_setting("DONGGU_SHADE_API_URL"),
             kma_auth_key=_setting("KMA_AUTH_KEY"),
             kma_surface_api_url=_setting("KMA_SURFACE_API_URL"),
             openai_api_key=_setting("OPENAI_API_KEY"),
