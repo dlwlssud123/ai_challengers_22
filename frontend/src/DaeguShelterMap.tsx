@@ -72,6 +72,7 @@ const PANE_Z_INDEX = {
   selectedRadius: 470,
   shelterClusters: 600,
   shelterMarkers: 650,
+  dongLabels: 790,
   districtLabels: 800,
 } as const;
 
@@ -271,6 +272,65 @@ function ViewportPersistence({ storageKey }: { storageKey: string }) {
   return null;
 }
 
+/** 폴리곤/멀티폴리곤 좌표 평균으로 centroid 계산 */
+function computeCentroid(geometry: any): [number, number] | null {
+  try {
+    const type: string = geometry?.type ?? '';
+    const coords = geometry?.coordinates;
+    if (!coords) return null;
+    let allPts: number[][] = [];
+    if (type === 'Polygon') {
+      allPts = coords[0] ?? [];
+    } else if (type === 'MultiPolygon') {
+      for (const poly of coords) allPts.push(...(poly[0] ?? []));
+    }
+    if (!allPts.length) return null;
+    const sumLat = allPts.reduce((s: number, p: number[]) => s + (p[1] ?? 0), 0);
+    const sumLon = allPts.reduce((s: number, p: number[]) => s + (p[0] ?? 0), 0);
+    return [sumLat / allPts.length, sumLon / allPts.length];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 행정동 이름 라벨 — zoom >= 12 일 때만 표시
+ * pointer-events: none 으로 코우즈를 뒷에 있는 feature에서 받는다
+ */
+function DongLabels({ dongs }: { dongs: FeatureCollection }) {
+  const map = useMap();
+  const [zoom, setZoom] = React.useState(map.getZoom());
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
+
+  // zoom 12 미만이면 레이블 숨김
+  if (zoom < 12) return null;
+
+  return (
+    <>
+      {dongs.features.map((feature, i) => {
+        const centroid = computeCentroid(feature.geometry);
+        if (!centroid) return null;
+        const name = String((feature.properties as any)?.adm_name ?? '');
+        if (!name) return null;
+        return (
+          <Marker
+            key={i}
+            position={centroid}
+            pane="dong-labels"
+            interactive={false}
+            icon={L.divIcon({
+              className: 'portable-dong-label',
+              html: `<span>${escapeHtml(name)}</span>`,
+              iconSize: [64, 18],
+              iconAnchor: [32, 9],
+            })}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 function readViewport(
   storageKey: string,
   fallbackCenter: [number, number],
@@ -323,13 +383,47 @@ export function DaeguShelterMap({
     if (districtName && onDistrictClick) layer.on('click', () => onDistrictClick(districtName));
   }, [onDistrictClick]);
   const onEachDong = React.useCallback((feature: any, layer: L.Layer) => {
-    const name = String(feature?.properties?.adm_name ?? feature?.properties?.full_adm_name ?? '');
+    const props = feature?.properties ?? {};
+    const name      = String(props.adm_name ?? props.full_adm_name ?? '');
+    const vuln      = props.vulnerability_score != null
+      ? Number(props.vulnerability_score).toFixed(1) : '-';
+    const priority  = props.priority_score != null
+      ? Number(props.priority_score).toFixed(1) : '-';
+    const shelters  = props.shelter_count ?? '-';
+    const coverage  = props.coverage_ratio_500m_area != null
+      ? (Number(props.coverage_ratio_500m_area) * 100).toFixed(1) + '%' : '-';
+    const elderly   = props.elderly_population_60_plus != null
+      ? Number(props.elderly_population_60_plus).toLocaleString('ko-KR') + '명' : '-';
+    const dist      = props.grid_mean_nearest_shelter_distance_m != null
+      ? Math.round(Number(props.grid_mean_nearest_shelter_distance_m)).toLocaleString('ko-KR') + 'm' : '-';
+
+    const vulnNum = props.vulnerability_score != null ? Number(props.vulnerability_score) : null;
+    const grade = vulnNum == null ? '' : vulnNum >= 80 ? '위험' : vulnNum >= 60 ? '주의' : '양호';
+    const gradeClass = vulnNum == null ? '' : vulnNum >= 80 ? 'vuln-danger' : vulnNum >= 60 ? 'vuln-warn' : 'vuln-safe';
+
     if (name) {
-      layer.bindTooltip(escapeHtml(name), {
-        direction: 'top',
-        sticky: true,
-        className: 'portable-shelter-tooltip',
-      });
+      layer.bindTooltip(
+        `<div class="dong-info-tooltip">
+          <div class="dit-header">
+            <b class="dit-name">${escapeHtml(name)}</b>
+            ${grade ? `<span class="dit-grade ${gradeClass}">${grade}</span>` : ''}
+          </div>
+          <div class="dit-grid">
+            <div class="dit-row"><span>취약도 점수</span><b>${vuln}</b></div>
+            <div class="dit-row"><span>우선순위</span><b>${priority}</b></div>
+            <div class="dit-row"><span>무더위쉼터</span><b>${shelters}곳</b></div>
+            <div class="dit-row"><span>500m 커버리지</span><b>${coverage}</b></div>
+            <div class="dit-row"><span>60세이상 고령인구</span><b>${elderly}</b></div>
+            <div class="dit-row"><span>평균 접근거리</span><b>${dist}</b></div>
+          </div>
+        </div>`,
+        {
+          direction: 'top',
+          sticky: true,
+          className: 'portable-dong-tooltip',
+          offset: [0, -4],
+        },
+      );
     }
     if (onDongClick) {
       layer.on('click', () => onDongClick(feature?.properties ?? {}));
@@ -360,6 +454,7 @@ export function DaeguShelterMap({
         <Pane name="selected-radius"    style={{ zIndex: PANE_Z_INDEX.selectedRadius }} />
         <Pane name="shelter-clusters"   style={{ zIndex: PANE_Z_INDEX.shelterClusters }} />
         <Pane name="shelter-markers"    style={{ zIndex: PANE_Z_INDEX.shelterMarkers }} />
+        <Pane name="dong-labels"        style={{ zIndex: PANE_Z_INDEX.dongLabels }} />
         <Pane name="district-labels"    style={{ zIndex: PANE_Z_INDEX.districtLabels }} />
 
         <TileLayer
@@ -431,6 +526,9 @@ export function DaeguShelterMap({
         />
         <ShelterClusterLayer shelters={shelters} onSelect={selectShelter} />
         <DistrictLabels districts={districtBoundaries} offsets={labelOffsets} />
+        {dongBoundaries && dongBoundaries.features.length > 0 && (
+          <DongLabels dongs={dongBoundaries} />
+        )}
 
         {selectedShelter && (
           <Circle
