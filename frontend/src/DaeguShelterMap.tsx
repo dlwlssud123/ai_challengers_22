@@ -67,8 +67,8 @@ const PANE_Z_INDEX = {
   cityFill: 310,
   dongBoundaries: 320,
   shelterRadii: 350,
-  districtBoundaries: 450,
-  cityBoundary: 460,
+  districtBoundaries: 330,
+  cityBoundary: 470,
   selectedRadius: 470,
   shelterClusters: 600,
   shelterMarkers: 650,
@@ -474,7 +474,7 @@ export function DaeguShelterMap({
             weight: 0,
             fill: true,
             fillColor: '#f3f7e8',
-            fillOpacity: 0.28,
+            fillOpacity: 0.12,
           }}
         />
 
@@ -506,10 +506,10 @@ export function DaeguShelterMap({
           style={(feature: any) => {
             const isSelected = selectedDistrict === feature?.properties?.district_name;
             return {
-              color: isSelected ? '#1a3040' : '#2c4455',
-              weight: isSelected ? 4.0 : 2.8,
-              opacity: isSelected ? 1 : 0.92,
-              dashArray: isSelected ? undefined : '7 3',
+              color: isSelected ? 'rgba(255,90,43,0.92)' : 'rgba(15,31,44,0.38)',
+              weight: isSelected ? 2.4 : 1.1,
+              opacity: isSelected ? 0.95 : 0.42,
+              dashArray: undefined,
               fill: false,
               fillOpacity: 0,
             };
@@ -523,7 +523,7 @@ export function DaeguShelterMap({
           data={cityBoundary as GeoJsonObject}
           pane="city-boundary"
           interactive={false}
-          style={{ color: '#0f1f2c', weight: 4.8, opacity: 1, fill: false }}
+          style={{ color: '#0f1f2c', weight: 2.6, opacity: 0.9, fill: false }}
         />
         <ShelterClusterLayer shelters={shelters} onSelect={selectShelter} />
         <DistrictLabels districts={districtBoundaries} offsets={labelOffsets} />
@@ -553,7 +553,7 @@ export function DaeguShelterMap({
         <div className="portable-map-legend" aria-hidden="true">
           <b>지도 범례</b>
           <span><i className="portable-legend-city" />대구 전체 외곽선</span>
-          <span><i className="portable-legend-district" />9개 구·군 경계</span>
+          <span><i className="portable-legend-district" />구·군 보조 경계</span>
           <span><i className="portable-legend-dong" />행정동 경계 (취약도)</span>
           <span><i className="portable-legend-vuln-high" />취약도 높음</span>
           <span><i className="portable-legend-vuln-mid" />취약도 보통</span>
