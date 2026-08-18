@@ -481,7 +481,7 @@ export function DaeguShelterMap({
         {/* ② 행정동 경계 — 취약도 색상 fill + 얇은 흰색 경계선 */}
         {dongBoundaries && dongBoundaries.features.length > 0 && (
           <GeoJSON
-            key={`dongs-${dongBoundaries.features.length}`}
+            key={`dongs-${dongBoundaries.features.length}-${String((dongBoundaries.features[0]?.properties as any)?.map_score ?? '')}`}
             data={dongBoundaries as GeoJsonObject}
             pane="dong-boundaries"
             style={(feature: any) => ({
@@ -514,6 +514,7 @@ export function DaeguShelterMap({
               fillOpacity: 0,
             };
           }}
+          interactive={false}
           onEachFeature={onEachDistrict}
         />
 

@@ -21,6 +21,7 @@ type Kpis = {
 
 type District = {
   sgis_adm_cd: string;
+  resident_adm_code: string;
   district_name: string;
   adm_name: string;
   full_adm_name: string;
@@ -158,13 +159,17 @@ function AppShelterMap({
 
   // 행정동 클릭 시 district 이름으로 구·군 하이라이트 + District 객체 선택
   const handleDongClick = React.useCallback((props: Record<string, unknown>) => {
-    const districtName = props.district_name as string | undefined;
+    const districtName = String(props.district_name || '');
+    const sgisCode = String(props.sgis_adm_cd || '');
+    const residentCode = String(props.resident_adm_code || '');
+    const admName = String(props.adm_name || '');
+    const match = data.districts.find(d =>
+      String(d.sgis_adm_cd || '') === sgisCode ||
+      String(d.resident_adm_code || '') === residentCode ||
+      (districtName && admName && d.district_name === districtName && d.adm_name === admName)
+    );
     if (districtName && onDistrictClick) onDistrictClick(districtName);
-    if (onSelect) {
-      const adm_cd = props.sgis_adm_cd as string | undefined;
-      const match = data.districts.find(d => d.sgis_adm_cd === adm_cd);
-      if (match) onSelect(match);
-    }
+    if (match && onSelect) onSelect(match);
   }, [data.districts, onDistrictClick, onSelect]);
 
   const emptyDistricts: DistrictBoundaryCollection = { type: 'FeatureCollection', features: [] };
