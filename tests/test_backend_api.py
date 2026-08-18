@@ -14,3 +14,10 @@ def test_overview_contains_citywide_boundaries_and_shelters():
 def test_allocation_returns_rows():
     payload = build_allocation({"budget": 50_000_000, "unit_cost": 10_000_000, "max_facilities": 5})
     assert "rows" in payload
+
+
+def test_overview_accessibility_uses_population_weighted_grid_score():
+    payload = build_overview("accessibility")
+    first = payload["boundaries"]["features"][0]["properties"]
+    assert first["grid_accessibility_index_exp_d_300"] == first["grid_population_weighted_accessibility_index"]
+    assert first["grid_accessibility_lack_score"] == first["grid_population_weighted_accessibility_lack_score"]

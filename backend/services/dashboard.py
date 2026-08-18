@@ -104,7 +104,12 @@ def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
         props = dict(feature.get("properties") or {})
         record = find_record(records, props.get("adm_nm", ""))
         if record:
-            access_index = record.get("grid_accessibility_index_exp_d_300")
+            access_index = record.get("grid_population_weighted_accessibility_index")
+            access_lack = record.get("grid_population_weighted_accessibility_lack_score")
+            if access_index is None:
+                access_index = record.get("grid_accessibility_index_exp_d_300")
+            if access_lack is None:
+                access_lack = record.get("grid_accessibility_lack_score")
             priority = record.get("priority_score_existing_pipeline")
             map_score = access_index if metric == "accessibility" else priority
             props.update(
@@ -121,7 +126,11 @@ def build_geojson(metric: str, records: list[dict[str, Any]]) -> dict:
                     "shelter_count": record.get("shelter_count"),
                     "coverage_ratio_500m_area": record.get("coverage_ratio_500m_area"),
                     "grid_accessibility_index_exp_d_300": access_index,
-                    "grid_accessibility_lack_score": record.get("grid_accessibility_lack_score"),
+                    "grid_accessibility_lack_score": access_lack,
+                    "grid_unweighted_accessibility_index_exp_d_300": record.get("grid_accessibility_index_exp_d_300"),
+                    "grid_unweighted_accessibility_lack_score": record.get("grid_accessibility_lack_score"),
+                    "grid_population_weighted_accessibility_index": record.get("grid_population_weighted_accessibility_index"),
+                    "grid_population_weighted_accessibility_lack_score": record.get("grid_population_weighted_accessibility_lack_score"),
                     "grid_mean_nearest_shelter_distance_m": record.get("grid_mean_nearest_shelter_distance_m"),
                     "grid_beyond_500m_ratio": record.get("grid_beyond_500m_ratio"),
                     "priority_score": priority,
@@ -147,7 +156,7 @@ def build_kpis(records: list[dict[str, Any]], shelters: list[dict[str, Any]]) ->
         "population": int(pd.to_numeric(frame["population"], errors="coerce").fillna(0).sum()),
         "elderly_population": int(pd.to_numeric(frame["elderly_population_60_plus"], errors="coerce").fillna(0).sum()),
         "shelter_count": int(len(shelters)),
-        "mean_grid_accessibility": float(pd.to_numeric(frame["grid_accessibility_index_exp_d_300"], errors="coerce").mean()),
+        "mean_grid_accessibility": float(pd.to_numeric(frame["grid_population_weighted_accessibility_index"], errors="coerce").mean()),
         "mean_green_ratio": float(pd.to_numeric(frame["green_ratio_percent"], errors="coerce").mean()),
     }
 
@@ -222,13 +231,13 @@ def build_ai_briefing(payload: dict) -> dict:
             "vulnerability_grade": "위험" if vulnerability >= 80 else "주의" if vulnerability >= 50 else "보통",
             "main_causes": [
                 {"name": "고령인구 비율", "value": record.get("elderly_ratio_60_plus"), "contribution": 0.35},
-                {"name": "격자 접근성 부족", "value": record.get("grid_accessibility_lack_score"), "contribution": 0.25},
+                {"name": "인구가중 격자 접근성 부족", "value": record.get("grid_population_weighted_accessibility_lack_score"), "contribution": 0.25},
                 {"name": "녹지율", "value": record.get("green_ratio_percent"), "contribution": 0.15},
             ],
             "vulnerable_population": elderly,
         },
         "accessibility": {
-            "facility_score": float(record.get("grid_accessibility_index_exp_d_300") or 0.0) * 100.0,
+            "facility_score": float(record.get("grid_population_weighted_accessibility_index") or record.get("grid_accessibility_index_exp_d_300") or 0.0) * 100.0,
             "nearest_shelter_distance_m": float(record.get("grid_mean_nearest_shelter_distance_m") or 0.0),
             "underserved_population": int(elderly * max(0.0, 1.0 - coverage / 100.0)),
             "coverage_rate": coverage,

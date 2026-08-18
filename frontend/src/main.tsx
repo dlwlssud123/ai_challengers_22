@@ -28,6 +28,10 @@ type District = {
   coverage_ratio_500m_area: number;
   grid_accessibility_index_exp_d_300: number;
   grid_accessibility_lack_score: number;
+  grid_unweighted_accessibility_index_exp_d_300?: number;
+  grid_unweighted_accessibility_lack_score?: number;
+  grid_population_weighted_accessibility_index?: number;
+  grid_population_weighted_accessibility_lack_score?: number;
   grid_mean_nearest_shelter_distance_m: number;
   grid_beyond_500m_ratio: number;
   priority_score_existing_pipeline: number;
@@ -231,7 +235,7 @@ function App() {
             <MetricCard icon={<MapPin />} label="행정동" value={`${overview.kpis.dong_count}개`} note="SGIS 전체 경계" />
             <MetricCard icon={<Users />} label="60세 이상 고령인구" value={`${fmtNumber(overview.kpis.elderly_population)}명`} />
             <MetricCard icon={<Activity />} label="무더위쉼터" value={`${fmtNumber(overview.kpis.shelter_count)}곳`} note="공공 API" />
-            <MetricCard icon={<BarChart3 />} label="평균 격자 접근성" value={`${(overview.kpis.mean_grid_accessibility * 100).toFixed(1)}%`} />
+            <MetricCard icon={<BarChart3 />} label="평균 인구가중 접근성" value={`${(overview.kpis.mean_grid_accessibility * 100).toFixed(1)}%`} />
           </section>
           <section className="main-grid">
             <div className="card map-card"><div className="card-header"><b>{metric === 'vulnerability' ? '종합 취약도 지도' : '100m 격자 접근성 지도'}</b><span>행정동을 클릭하세요</span></div><MapView data={overview} selected={selected?.sgis_adm_cd} onSelect={setSelected} /></div>
@@ -239,7 +243,7 @@ function App() {
               <div className="card-header"><b>{selectedFeature?.full_adm_name || '행정동 선택'}</b></div>
               {selectedFeature && <div className="detail-body">
                 <MetricCard icon={<Users />} label="고령인구" value={`${fmtNumber(selectedFeature.elderly_population_60_plus)}명`} note={`${fmtScore(selectedFeature.elderly_ratio_60_plus * 100)}%`} />
-                <MetricCard icon={<Activity />} label="격자 접근성 부족" value={`${fmtScore(selectedFeature.grid_accessibility_lack_score)}점`} note={`평균거리 ${fmtNumber(selectedFeature.grid_mean_nearest_shelter_distance_m)}m`} />
+                <MetricCard icon={<Activity />} label="인구가중 접근성 부족" value={`${fmtScore(selectedFeature.grid_accessibility_lack_score)}점`} note={`평균거리 ${fmtNumber(selectedFeature.grid_mean_nearest_shelter_distance_m)}m`} />
                 <MetricCard icon={<MapPin />} label="쉼터 수" value={`${fmtNumber(selectedFeature.shelter_count)}곳`} note={`녹지율 ${fmtScore(selectedFeature.green_ratio_percent)}%`} />
                 <MetricCard icon={<BarChart3 />} label="종합 우선순위" value={`${fmtScore(selectedFeature.priority_score_existing_pipeline)}점`} />
                 <button className="primary" onClick={runBriefing} disabled={loadingBrief}>{loadingBrief ? '생성 중...' : 'AI 폭염 대응 추천 받기'}</button>
