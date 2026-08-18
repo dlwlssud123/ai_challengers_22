@@ -114,6 +114,45 @@ type Overview = {
   shades: Array<{ facility_id: string; shelter_id: string; name: string; address: string; latitude: number; longitude: number; shelter_type: string }>;
 };
 
+type ClusterAssignment = {
+  dong_code: string;
+  sgis_adm_cd: string;
+  district_name: string;
+  dong_name: string;
+  full_adm_name: string;
+  dbscan_cluster: number;
+  cluster_name: string;
+  cluster_type: string;
+  is_noise: boolean;
+  global_installation_priority: number;
+  main_causes: string[];
+  recommended_facilities: string[];
+  feature_zscores: Record<string, number>;
+  features: Record<string, number>;
+};
+
+type ClusterAnalysis = {
+  metadata: {
+    record_count: number;
+    feature_labels: Record<string, string>;
+    dbscan: { cluster_count: number; noise_count: number; noise_ratio: number; silhouette_score?: number };
+    surrogate_validation: { model: string; accuracy: number; macro_f1: number; shap_method: string };
+    warnings: string[];
+  };
+  global_feature_importance: Array<{ key: string; label: string; mean_abs_shap: number }>;
+  clusters: Array<{
+    dbscan_cluster: number;
+    cluster_name: string;
+    cluster_type: string;
+    dong_count: number;
+    main_causes: string[];
+    recommended_facilities: string[];
+    top_shap_features: Array<{ key: string; label: string; mean_abs_shap: number }>;
+    priority_dongs: ClusterAssignment[];
+  }>;
+  assignments: ClusterAssignment[];
+};
+
 type WhatIfResult = {
   status: string;
   budget: number;
@@ -169,6 +208,11 @@ const api = {
     });
     if (!res.ok) throw new Error('AI 브리핑을 생성하지 못했습니다.');
     return res.json();
+  },
+  async clusterAnalysis(): Promise<ClusterAnalysis> {
+    const res = await fetch('/api/cluster-analysis');
+    if (!res.ok) throw new Error('DBSCAN/SHAP 분석을 불러오지 못했습니다.');
+    return res.json();
   }
 };
 
@@ -222,13 +266,17 @@ function AppShelterMap({
   const hasCity = data.city_boundary?.features?.length > 0;
 
   const handleDongClick = React.useCallback((props: Record<string, unknown>) => {
-    const districtName = props.district_name as string | undefined;
+    const districtName = String(props.district_name || '');
+    const sgisCode = String(props.sgis_adm_cd || '');
+    const residentCode = String(props.resident_adm_code || '');
+    const admName = String(props.adm_name || '');
+    const match = data.districts.find(d =>
+      String(d.sgis_adm_cd || '') === sgisCode ||
+      String(d.resident_adm_code || '') === residentCode ||
+      (districtName && admName && d.district_name === districtName && d.adm_name === admName)
+    );
     if (districtName && onDistrictClick) onDistrictClick(districtName);
-    if (onSelect) {
-      const adm_cd = props.sgis_adm_cd as string | undefined;
-      const match = data.districts.find(d => d.sgis_adm_cd === adm_cd);
-      if (match) onSelect(match);
-    }
+    if (match && onSelect) onSelect(match);
   }, [data.districts, onDistrictClick, onSelect]);
 
   const emptyDistricts: DistrictBoundaryCollection = { type: 'FeatureCollection', features: [] };
@@ -454,12 +502,14 @@ function DetailedAnalysisView({
   data,
   selectedDistrict,
   selected,
+  clusterAnalysis,
   onDistrictClick,
   onSelect,
 }: {
   data: Overview;
   selectedDistrict?: string;
   selected: District;
+  clusterAnalysis: ClusterAnalysis | null;
   onDistrictClick: (name: string) => void;
   onSelect: (d: District) => void;
 }) {
@@ -474,6 +524,11 @@ function DetailedAnalysisView({
   const sortedDrivers = [...drivers].sort((a, b) => b.score - a.score);
   const primaryDriverName = selected.primary_risk_driver || sortedDrivers[0]?.name || '쉼터 접근 사각지대';
   const primaryDriverDesc = selected.primary_driver_desc || sortedDrivers[0]?.desc || '도보 500m 반경 쉼터 접근성 부족';
+  const clusterAssignment = clusterAnalysis?.assignments.find(a =>
+    String(a.sgis_adm_cd || '') === String(selected.sgis_adm_cd || '') ||
+    String(a.dong_code || '') === String(selected.resident_adm_code || '')
+  );
+  const maxShap = Math.max(1e-9, ...(clusterAnalysis?.global_feature_importance.map(f => f.mean_abs_shap) || [1]));
 
   return (
     <div className="page">
@@ -560,6 +615,61 @@ function DetailedAnalysisView({
               </div>
             </div>
           </section>
+
+
+          <section className="card">
+            <div className="card-header">
+              <div className="card-title">🧠 DBSCAN · SHAP 취약 유형</div>
+            </div>
+            <div style={{ padding: '0 16px 16px', display: 'grid', gap: 10 }}>
+              {clusterAssignment ? (
+                <>
+                  <div className="cause-box">
+                    <div className="cause-title">군집 분류: <b>{clusterAssignment.cluster_name}</b></div>
+                    <div className="cause-driver-name">유형: <b>{clusterAssignment.cluster_type}</b></div>
+                    <div className="cause-desc">주요 원인: {clusterAssignment.main_causes.join(' · ')}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#a9bac7', lineHeight: 1.7 }}>
+                    추천 대응: <b style={{ color: '#4ade80' }}>{clusterAssignment.recommended_facilities.join(' · ')}</b><br />
+                    설치 우선순위: <b style={{ color: '#f8b04c' }}>{clusterAssignment.global_installation_priority}위</b>
+                  </div>
+                  {Object.entries(clusterAssignment.feature_zscores).map(([key, value]) => (
+                    <div key={key}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#a0b3c2' }}>
+                        <span>{clusterAnalysis?.metadata.feature_labels[key] || key}</span>
+                        <b>{fmtScore(value)}</b>
+                      </div>
+                      <MiniBar value={Math.max(0, Number(value) + 2)} max={4} color={value > 0 ? '#ff8b24' : '#38bdf8'} />
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div style={{ color: '#7a8e9e', fontSize: 12 }}>군집 분석 데이터를 불러오는 중입니다.</div>
+              )}
+            </div>
+          </section>
+
+          {clusterAnalysis && (
+            <section className="card">
+              <div className="card-header">
+                <div className="card-title">전역 SHAP 중요도</div>
+              </div>
+              <div style={{ padding: '0 16px 16px' }}>
+                {clusterAnalysis.global_feature_importance.slice(0, 6).map(item => (
+                  <div key={item.key} style={{ margin: '10px 0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#a0b3c2' }}>
+                      <span>{item.label}</span>
+                      <b>{item.mean_abs_shap.toFixed(4)}</b>
+                    </div>
+                    <MiniBar value={item.mean_abs_shap} max={maxShap} color="#a855f7" />
+                  </div>
+                ))}
+                <div style={{ marginTop: 10, color: '#6f8392', fontSize: 10, lineHeight: 1.5 }}>
+                  {clusterAnalysis.metadata.surrogate_validation.model} · 정확도 {fmtScore(clusterAnalysis.metadata.surrogate_validation.accuracy * 100)}% · SHAP은 군집 설명용이며 인과효과가 아닙니다.
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* 통합 세부 지표 카드 */}
           <section className="card">
@@ -872,8 +982,16 @@ function App() {
   const [loadingWhatIf, setLoadingWhatIf] = React.useState(false);
   const [briefing, setBriefing] = React.useState<any | null>(null);
   const [loadingBrief, setLoadingBrief] = React.useState(false);
+  const [clusterAnalysis, setClusterAnalysis] = React.useState<ClusterAnalysis | null>(null);
 
   // Load Overview data (기본 취약도+접근성 종합 히트맵 데이터 로드)
+  React.useEffect(() => {
+    api.clusterAnalysis().then(setClusterAnalysis).catch(err => {
+      console.error(err);
+      showToast('DBSCAN/SHAP 분석을 불러오지 못했습니다.');
+    });
+  }, []);
+
   React.useEffect(() => {
     api.overview('vulnerability').then(data => {
       setOverview(data);
@@ -956,6 +1074,7 @@ function App() {
             data={overview}
             selectedDistrict={selectedDistrict}
             selected={selected || overview.districts[0]}
+            clusterAnalysis={clusterAnalysis}
             onDistrictClick={handleDistrictClick}
             onSelect={setSelected}
           />

@@ -121,7 +121,7 @@ export function getScoreGradeAndColor(scoreVal: unknown): {
 }
 
 export function getFeatureColor(props: any): string {
-  const score = props?.composite_risk_score ?? props?.map_score ?? props?.vulnerability_score;
+  const score = props?.map_score ?? props?.composite_risk_score ?? props?.vulnerability_score;
   return getScoreGradeAndColor(score).color;
 }
 
@@ -417,7 +417,7 @@ export function DaeguShelterMap({
     const name = String(props.adm_name ?? props.full_adm_name ?? '');
     
     // getScoreGradeAndColor 단일 함수로 등급/점수/뱃지 산출
-    const scoreRaw = props.composite_risk_score ?? props.map_score ?? props.vulnerability_score;
+    const scoreRaw = props.map_score ?? props.composite_risk_score ?? props.vulnerability_score;
     const { grade, badgeClass, score } = getScoreGradeAndColor(scoreRaw);
     const cScoreStr = score.toFixed(1);
 

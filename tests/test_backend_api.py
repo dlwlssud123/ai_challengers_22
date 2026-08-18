@@ -18,11 +18,25 @@ def test_allocation_returns_rows():
     assert "rows" in payload
 
 
-def test_overview_accessibility_uses_population_weighted_grid_score():
+def test_overview_accessibility_map_score_uses_normalized_accessibility():
     payload = build_overview("accessibility")
-    first = payload["boundaries"]["features"][0]["properties"]
-    assert first["grid_accessibility_index_exp_d_300"] == first["grid_population_weighted_accessibility_index"]
-    assert first["grid_accessibility_lack_score"] == first["grid_population_weighted_accessibility_lack_score"]
+    for feature in payload["boundaries"]["features"]:
+        props = feature["properties"]
+        assert props["map_score"] == 100.0 - props["accessibility_lack_pct"]
+        assert 0.0 <= props["map_score"] <= 100.0
+
+
+def test_overview_metric_map_scores_are_consistent():
+    expectations = {
+        "vulnerability": "composite_risk_score",
+        "future-risk": "future_climate_risk_pct",
+    }
+    for metric, key in expectations.items():
+        payload = build_overview(metric)
+        for feature in payload["boundaries"]["features"]:
+            props = feature["properties"]
+            assert props["map_score"] == props[key]
+            assert 0.0 <= props["map_score"] <= 100.0
 
 
 def test_overview_future_risk_merges_prediction_fields():
