@@ -58,14 +58,8 @@ def _points_to_records(points) -> list[dict[str, Any]]:
 
 @lru_cache(maxsize=1)
 def load_shelters() -> list[dict[str, Any]]:
-    processed_shelters = PROCESSED_DIR / "shelters.geojson"
-    if processed_shelters.exists():
-        import geopandas as gpd
-
-        shelters = gpd.read_file(processed_shelters).to_crs("EPSG:4326")
-    else:
-        source = build_source_dataset(Settings.from_env())
-        shelters = source.citywide_shelters.to_crs("EPSG:4326")
+    source = build_source_dataset(Settings.from_env())
+    shelters = source.citywide_shelters.to_crs("EPSG:4326")
     return _points_to_records(shelters)
 
 
