@@ -220,6 +220,16 @@ const api = {
 function fmtNumber(value?: number | null) { return Number(value || 0).toLocaleString('ko-KR'); }
 function fmtScore(value?: number | null) { return Number(value || 0).toFixed(1); }
 
+const HEATMAP_MODES: Array<{ key: MetricMode; label: string; desc: string }> = [
+  { key: 'vulnerability', label: '종합 취약도', desc: '고령인구·쉼터 접근성·미래위험 종합' },
+  { key: 'accessibility', label: '쉼터 접근성', desc: '격자 기반 500m 보행 접근권' },
+  { key: 'future-risk', label: '온열질환 위험', desc: '2030 미래 온열질환 위험' },
+];
+
+function heatmapModeLabel(mode: MetricMode) {
+  return HEATMAP_MODES.find(item => item.key === mode)?.label || '종합 취약도';
+}
+
 function getGradeBadge(grade?: string, score?: number) {
   const g = grade || (
     score != null ? (
@@ -339,6 +349,8 @@ function DashboardView({
   data,
   selectedDistrict,
   selected,
+  heatmapMetric,
+  onHeatmapMetricChange,
   onDistrictClick,
   onSelect,
   onNavigateDetail,
@@ -346,6 +358,8 @@ function DashboardView({
   data: Overview;
   selectedDistrict?: string;
   selected?: District;
+  heatmapMetric: MetricMode;
+  onHeatmapMetricChange: (mode: MetricMode) => void;
   onDistrictClick: (name: string) => void;
   onSelect: (d: District) => void;
   onNavigateDetail: () => void;
@@ -364,15 +378,15 @@ function DashboardView({
     <div className="page">
       <PageHeader
         title="대구 폭염 종합 현황 대시보드"
-        subtitle="대구시 150개 행정동의 취약인구 분포, 무더위쉼터 보행 접근권, 2030 기후위험을 결합한 통합 히트맵"
-        tag="✦ 취약도+접근성 통합 지수"
+        subtitle="대구시 150개 행정동의 종합 취약도, 쉼터 접근성, 온열질환 위험을 지표별 히트맵으로 비교합니다"
+        tag="✦ 지표별 히트맵"
       />
 
       {/* KPI 그리드 */}
       <div className="kpi-grid">
         <KpiCard icon="☀️" label="분석 행정동" value={<>{data.kpis.dong_count}<small>개동</small></>} note="대구시 전역 SGIS 연동" />
         <KpiCard icon="👥" label="60세+ 고령인구" value={<>{fmtNumber(data.kpis.elderly_population)}<small>명</small></>} note="대구 취약인구 총합" />
-        <KpiCard icon="🚨" label="고위험(심각/위험) 동" value={<>{severeCount}<small>개동</small></>} note="종합 위험지수 60점 이상" color="#ef4444" />
+        <KpiCard icon="🚨" label="고위험(심각/위험) 동" value={<>{severeCount}<small>개동</small></>} note="종합 취약도 60점 이상" color="#ef4444" />
         <KpiCard icon="🛡️" label="무더위쉼터 / 그늘막" value={<>{fmtNumber(data.kpis.shelter_count)}<small> / {data.kpis.shade_count}</small></>} note="대구시 공식 지정 시설" color="#3b82f6" />
       </div>
 
@@ -381,12 +395,26 @@ function DashboardView({
         <section className="card map-card">
           <div className="card-header">
             <div>
-              <div className="card-title">대구 폭염 종합 취약도 & 접근성 통합 히트맵</div>
+              <div className="card-title">대구 폭염 지표별 히트맵</div>
               <div style={{ fontSize: 11, color: '#8295a4', marginTop: 2 }}>
-                고령인구율 + 500m 쉼터 미도달 결여도 + 2030 미래 열노출을 융합한 단일 위험도 히트맵
+                종합 취약도 · 쉼터 접근성 · 온열질환 위험을 전환해 행정동별 상태를 비교
               </div>
             </div>
-            <span style={{ fontSize: 12, color: '#94a3b8' }}>💡 행정동 마우스 오버 시 상세 툴팁</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <div className="heatmap-toggle" role="group" aria-label="대시보드 히트맵 지표 선택">
+                {HEATMAP_MODES.map(mode => (
+                  <button
+                    key={mode.key}
+                    className={heatmapMetric === mode.key ? 'active' : ''}
+                    onClick={() => onHeatmapMetricChange(mode.key)}
+                    title={mode.desc}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>현재: {heatmapModeLabel(heatmapMetric)}</span>
+            </div>
           </div>
           <div className="map-body" style={{ minHeight: 480 }}>
             <div className="map-stage" style={{ minHeight: 480, padding: 0 }}>
@@ -427,7 +455,7 @@ function DashboardView({
           <section className="card">
             <div className="card-header" style={{ justifyContent: 'space-between' }}>
               <div className="card-title">집중 관리 필요 지역 (TOP 6)</div>
-              <button className="text-link-btn" onClick={onNavigateDetail}>상세 분석 바로가기 →</button>
+              <button className="text-link-btn" onClick={onNavigateDetail}>원인 진단 바로가기 →</button>
             </div>
             <div className="rank-list">
               {topDongs.map((d, i) => {
@@ -476,7 +504,7 @@ function DashboardView({
           </div>
           <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
             {[
-              ['종합 위험지수', `${fmtScore(selected.composite_risk_score)}점`, '#ff8b24'],
+              ['종합 취약도', `${fmtScore(selected.composite_risk_score)}점`, '#ff8b24'],
               ['주요 취약 원인', `${selected.primary_risk_driver || '고령층 밀집'}`, '#f87171'],
               ['60세+ 고령인구', `${fmtNumber(selected.elderly_population_60_plus)}명 (${fmtScore(selected.elderly_ratio_60_plus * 100)}%)`, '#38bdf8'],
               ['무더위쉼터', `${selected.shelter_count}곳`, '#4ade80'],
@@ -496,7 +524,7 @@ function DashboardView({
 }
 
 // ──────────────────────────────────────────────────
-// 2. 상세 분석 (Detailed Analysis: 취약도+접근성 단일 통합 뷰)
+// 2. 원인 진단 (종합 취약도 기반 원인 분석)
 // ──────────────────────────────────────────────────
 function DetailedAnalysisView({
   data,
@@ -533,8 +561,8 @@ function DetailedAnalysisView({
   return (
     <div className="page">
       <PageHeader
-        title="행정동 취약성 & 접근성 심층 원인 진단"
-        subtitle="취약도와 시설 접근권을 통합한 단일 히트맵에서 특정 동을 클릭하여 왜 취약한지 4대 원인을 진단합니다"
+        title="행정동 종합 취약도 원인 진단"
+        subtitle="종합 취약도 히트맵에서 특정 동을 클릭하여 왜 취약한지 4대 원인과 DBSCAN·SHAP 유형을 진단합니다"
         tag="🔍 원스톱 통합 진단"
       />
 
@@ -543,7 +571,7 @@ function DetailedAnalysisView({
         <section className="card map-card">
           <div className="card-header">
             <div>
-              <div className="card-title">대구시 폭염 취약도 & 쉼터 접근권 통합 히트맵</div>
+              <div className="card-title">대구시 종합 취약도 히트맵</div>
               <div style={{ fontSize: 11, color: '#8295a4', marginTop: 2 }}>
                 현재 선택: <b style={{ color: '#f8b04c' }}>{selected.full_adm_name}</b> (지도에서 다른 동을 클릭하여 변경)
               </div>
@@ -678,7 +706,7 @@ function DetailedAnalysisView({
             </div>
             <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
               {[
-                ['종합 위험지수', `${fmtScore(selected.composite_risk_score)}점`, '#ff8b24'],
+                ['종합 취약도', `${fmtScore(selected.composite_risk_score)}점`, '#ff8b24'],
                 ['고령인구 비율', `${fmtScore(selected.elderly_ratio_60_plus * 100)}% (${fmtNumber(selected.elderly_population_60_plus)}명)`, '#f87171'],
                 ['500m 쉼터 커버리지', `${fmtScore(selected.coverage_ratio_500m_area * 100)}%`, '#eab308'],
                 ['사각지대 고령인구', `${fmtNumber(Math.round(selected.elderly_population_60_plus * Math.max(0, 1 - selected.coverage_ratio_500m_area)))}명`, '#f87171'],
@@ -960,8 +988,8 @@ function PolicyOptimizationView({
 // Main Navigation Definition (3대 핵심 메뉴)
 // ──────────────────────────────────────────────────
 const NAV_ITEMS: { key: MainNavKey; icon: string; label: string; desc: string }[] = [
-  { key: 'dashboard', icon: '📊', label: '대시보드', desc: '대구 전체 요약 & 히트맵' },
-  { key: 'analysis',  icon: '🔍', label: '상세 분석', desc: '취약성 & 접근성 원인 진단' },
+  { key: 'dashboard', icon: '📊', label: '대시보드', desc: '대구 전체 요약 & 지표 별 히트맵' },
+  { key: 'analysis',  icon: '🔍', label: '원인 진단', desc: '종합 취약도 원인 진단' },
   { key: 'policy',    icon: '💡', label: '정책 & 예산', desc: 'What-If 시뮬레이션 & AI브리핑' },
 ];
 
@@ -973,6 +1001,7 @@ function App() {
   const [overview, setOverview] = React.useState<Overview | null>(null);
   const [selected, setSelected] = React.useState<District | null>(null);
   const [selectedDistrict, setSelectedDistrict] = React.useState<string | undefined>();
+  const [heatmapMetric, setHeatmapMetric] = React.useState<MetricMode>('vulnerability');
 
   // What-If & Policy state
   const [budget, setBudget] = React.useState(50_000_000);
@@ -994,14 +1023,18 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    api.overview('vulnerability').then(data => {
+    api.overview(heatmapMetric).then(data => {
       setOverview(data);
-      setSelected(curr => curr || data.districts[0]);
+      setSelected(curr => {
+        const sgisCode = curr?.sgis_adm_cd;
+        const residentCode = curr?.resident_adm_code;
+        return data.districts.find(d => String(d.sgis_adm_cd) === String(sgisCode) || String(d.resident_adm_code) === String(residentCode)) || data.districts[0];
+      });
     }).catch(err => {
       console.error(err);
       showToast('데이터를 불러오지 못했습니다.');
     });
-  }, []);
+  }, [heatmapMetric]);
 
   // Run What-If on params change
   const runWhatIf = React.useCallback(async () => {
@@ -1067,6 +1100,8 @@ function App() {
             data={overview}
             selectedDistrict={selectedDistrict}
             selected={selected ?? undefined}
+            heatmapMetric={heatmapMetric}
+            onHeatmapMetricChange={setHeatmapMetric}
             onDistrictClick={handleDistrictClick}
             onSelect={setSelected}
             onNavigateDetail={() => setNavKey('analysis')}
@@ -1119,7 +1154,10 @@ function App() {
             <button
               key={item.key}
               className={`nav-item${navKey === item.key ? ' active' : ''}`}
-              onClick={() => setNavKey(item.key)}
+              onClick={() => {
+                setNavKey(item.key);
+                if (item.key === 'analysis') setHeatmapMetric('vulnerability');
+              }}
             >
               <span className="nav-icon">{item.icon}</span>
               <div style={{ textAlign: 'left' }}>

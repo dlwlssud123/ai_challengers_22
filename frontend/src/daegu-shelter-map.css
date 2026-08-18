@@ -219,7 +219,7 @@
   display: block;
   width: max-content;
   max-width: 72px;
-  transform: translateX(-50%);
+  transform: translate(-50%, 10px);
   color: #1a2a35;
   font-size: 10px;
   font-weight: 650;
@@ -235,6 +235,8 @@
   white-space: nowrap;
 }
 
+.daegu-shelter-map .leaflet-tooltip-pane { z-index: 760 !important; }
+
 /* ── 행정동 상세 툴팁 wrapper ── */
 .portable-dong-tooltip {
   border: 0 !important;
@@ -248,7 +250,6 @@
   padding: 0;
 }
 
-/* ── 행정동 상세 툴팁 내용 ── */
 /* ── 행정동 상세 툴팁 내용 ── */
 .dong-info-tooltip {
   padding: 13px 15px;

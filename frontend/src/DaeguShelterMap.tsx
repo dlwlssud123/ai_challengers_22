@@ -72,8 +72,8 @@ const PANE_Z_INDEX = {
   selectedRadius: 470,
   shelterClusters: 600,
   shelterMarkers: 650,
-  dongLabels: 790,
-  districtLabels: 800,
+  dongLabels: 430,
+  districtLabels: 440,
 } as const;
 
 const DEFAULT_CENTER: [number, number] = [35.9669, 128.6258];
@@ -345,7 +345,7 @@ function DongLabels({ dongs }: { dongs: FeatureCollection }) {
         return (
           <Marker
             key={i}
-            position={centroid}
+            position={[centroid[0] - 0.0015, centroid[1]]}
             pane="dong-labels"
             interactive={false}
             icon={L.divIcon({
@@ -456,7 +456,7 @@ export function DaeguShelterMap({
             <div class="dit-row"><span>평균 접근거리</span><b>${dist}</b></div>
             <div class="dit-row"><span>녹지비율</span><b>${props.green_ratio_percent != null ? Number(props.green_ratio_percent).toFixed(1) + '%' : '-'}</b></div>
           </div>
-          <div class="dit-hint">클릭 시 우측 상세 분석으로 이동</div>
+          <div class="dit-hint">클릭 시 우측 원인 진단으로 이동</div>
         </div>`,
         {
           direction: 'top',
