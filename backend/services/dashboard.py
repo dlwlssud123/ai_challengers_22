@@ -48,6 +48,54 @@ def load_boundaries() -> dict:
     )
 
 
+@lru_cache(maxsize=1)
+def load_district_boundaries() -> dict:
+    """구·군 경계 (low_search=1). DaeguShelterMap에 필요한 district_name/label 좌표를 주입한다."""
+    raw = SGISClient(timeout=30.0).get_administrative_boundaries(
+        adm_cd="22", year=2025, low_search=1
+    )
+    features = []
+    for feature in raw.get("features", []):
+        props = dict(feature.get("properties") or {})
+        adm_nm: str = str(props.get("adm_nm") or "")
+        # 구·군 이름만 추출 (마지막 토큰)
+        district_name = adm_nm.split()[-1] if adm_nm.strip() else adm_nm
+        # centroid 계산 (좌표 평균)
+        try:
+            coords = feature.get("geometry", {}).get("coordinates", [])
+            geom_type = feature.get("geometry", {}).get("type", "")
+            all_pts: list[list[float]] = []
+            if geom_type == "Polygon":
+                all_pts = coords[0] if coords else []
+            elif geom_type == "MultiPolygon":
+                for poly in coords:
+                    all_pts.extend(poly[0] if poly else [])
+            if all_pts:
+                lons = [p[0] for p in all_pts if len(p) >= 2]
+                lats = [p[1] for p in all_pts if len(p) >= 2]
+                label_lat = sum(lats) / len(lats)
+                label_lon = sum(lons) / len(lons)
+            else:
+                label_lat = label_lon = 0.0
+        except Exception:
+            label_lat = label_lon = 0.0
+        props["district_name"] = district_name
+        props["label_latitude"] = label_lat
+        props["label_longitude"] = label_lon
+        copied = dict(feature)
+        copied["properties"] = props
+        features.append(copied)
+    return {"type": "FeatureCollection", "features": features}
+
+
+@lru_cache(maxsize=1)
+def load_city_boundary() -> dict:
+    """대구 전체 외곽 경계 (low_search=0)."""
+    return SGISClient(timeout=30.0).get_administrative_boundaries(
+        adm_cd="22", year=2025, low_search=0
+    )
+
+
 def _points_to_records(points) -> list[dict[str, Any]]:
     frame = pd.DataFrame(points.drop(columns="geometry", errors="ignore"))
     frame["longitude"] = points.geometry.x
@@ -171,6 +219,15 @@ def build_overview(metric: str = "vulnerability") -> dict:
     records = load_summary_records()
     shelters = load_shelters()
     shades = load_shades()
+    # district_boundaries / city_boundary 로딩 실패 시 빈 FeatureCollection으로 대체
+    try:
+        district_boundaries = load_district_boundaries()
+    except Exception:
+        district_boundaries = {"type": "FeatureCollection", "features": []}
+    try:
+        city_boundary = load_city_boundary()
+    except Exception:
+        city_boundary = {"type": "FeatureCollection", "features": []}
     return {
         "metadata": {
             "region": "대구광역시",
@@ -180,6 +237,8 @@ def build_overview(metric: str = "vulnerability") -> dict:
         },
         "kpis": build_kpis(records, shelters, shades),
         "boundaries": build_geojson(metric, records),
+        "district_boundaries": district_boundaries,
+        "city_boundary": city_boundary,
         "districts": records,
         "shelters": shelters,
         "shades": shades,

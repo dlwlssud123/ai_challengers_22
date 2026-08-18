@@ -1,0 +1,165 @@
+.daegu-shelter-map {
+  position: relative;
+  width: 100%;
+  height: var(--daegu-map-height, 680px);
+  overflow: hidden;
+  border: 1px solid #d9dee2;
+  border-radius: 12px;
+  background: #f4f5f2;
+  isolation: isolate;
+}
+
+.daegu-shelter-map > .leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #f4f5f2;
+  color: #20252b;
+  font-family: Inter, Pretendard, "Noto Sans KR", sans-serif;
+}
+
+.daegu-shelter-map .leaflet-bar {
+  border: 0;
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.16);
+}
+
+.daegu-shelter-map .leaflet-control-zoom a {
+  color: #26323b;
+  background: #fff;
+}
+
+.daegu-shelter-map .leaflet-district-labels-pane,
+.daegu-shelter-map .portable-district-label {
+  pointer-events: none !important;
+}
+
+.portable-district-label {
+  border: 0 !important;
+  background: transparent;
+}
+
+.portable-district-label span {
+  position: relative;
+  left: 50%;
+  display: block;
+  width: max-content;
+  max-width: 92px;
+  transform: translateX(-50%);
+  color: #1f2933;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-align: center;
+  text-shadow:
+    -1px -1px 0 rgba(255, 255, 255, 0.92),
+    1px -1px 0 rgba(255, 255, 255, 0.92),
+    -1px 1px 0 rgba(255, 255, 255, 0.92),
+    1px 1px 0 rgba(255, 255, 255, 0.92),
+    0 2px 4px rgba(255, 255, 255, 0.86);
+  white-space: nowrap;
+}
+
+.portable-shelter-marker {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.portable-shelter-marker span {
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: 2px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: #f97316;
+  box-shadow: 0 1px 5px rgba(124, 45, 18, 0.5);
+}
+
+.portable-shelter-cluster {
+  display: grid !important;
+  place-items: center;
+  border: 1.5px solid rgba(218, 146, 0, 0.78);
+  border-radius: 50%;
+  background: rgba(255, 190, 0, 0.74);
+  box-shadow: 0 0 0 4px rgba(255, 190, 0, 0.12), 0 4px 12px rgba(120, 83, 15, 0.2);
+  color: #3f321d;
+  font-weight: 850;
+  text-align: center;
+  backdrop-filter: blur(1px);
+}
+
+.portable-shelter-cluster--small { background: rgba(255, 205, 45, 0.72); }
+.portable-shelter-cluster--medium { background: rgba(255, 190, 0, 0.75); }
+.portable-shelter-cluster--large { background: rgba(246, 173, 0, 0.78); }
+.portable-shelter-cluster span { display: grid; place-items: center; width: 100%; height: 100%; }
+
+.portable-shelter-tooltip {
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: #20252b !important;
+  color: #fff !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+
+.portable-shelter-leaflet-popup .leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.25);
+}
+
+.portable-shelter-leaflet-popup .leaflet-popup-content {
+  width: auto !important;
+  min-width: 220px;
+  margin: 0;
+}
+
+.portable-shelter-popup {
+  padding: 15px 16px;
+  color: #28323a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.portable-shelter-popup h3 { margin: 0 24px 8px 0; color: #111827; font-size: 15px; }
+.portable-shelter-popup p { display: grid; grid-template-columns: 58px 1fr; gap: 7px; margin: 7px 0; }
+.portable-shelter-popup p b { color: #5c6670; font-size: 11px; }
+
+.portable-shelter-popup__summary {
+  display: flex;
+  gap: 8px;
+  margin: 0 -16px 10px;
+  padding: 7px 16px;
+  background: #ecfeff;
+  color: #0f6971;
+  font-size: 11px;
+}
+
+.portable-map-legend {
+  position: absolute;
+  z-index: 900;
+  left: 12px;
+  bottom: 28px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.93);
+  color: #5d6872;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.portable-map-legend b { color: #27313a; }
+.portable-map-legend span { display: flex; align-items: center; gap: 7px; }
+.portable-map-legend i { display: inline-block; flex: 0 0 auto; }
+.portable-legend-city, .portable-legend-district { width: 18px; height: 0; }
+.portable-legend-city { border-top: 4px solid #26313a; }
+.portable-legend-district { border-top: 2px solid #35414a; }
+.portable-legend-radius { width: 15px; height: 15px; border: 1px solid #43c8cc; border-radius: 50%; }
+.portable-legend-cluster { width: 15px; height: 15px; border: 1px solid #da9200; border-radius: 50%; background: rgba(255, 190, 0, 0.74); }
+
+@media (max-width: 640px) {
+  .portable-district-label span { font-size: 13px; }
+  .portable-map-legend { display: none; }
+}

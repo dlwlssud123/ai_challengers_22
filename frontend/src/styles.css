@@ -347,65 +347,11 @@ button, input, select { font: inherit; color: inherit; }
   border: 1px solid #223341;
 }
 
-/* Leaflet map dark theme overrides */
-.leaflet-container {
-  background: #07121b !important;
-  font-family: inherit;
+/* DaeguShelterMap이 map-stage 내부를 꽉 채우도록 */
+.map-stage .daegu-shelter-map {
+  border: none;
+  border-radius: 0;
 }
-.leaflet-tile-pane { filter: brightness(0.85) saturate(0.75) hue-rotate(185deg); }
-.leaflet-control-zoom {
-  border: 1px solid var(--stroke) !important;
-  border-radius: 8px !important;
-  overflow: hidden;
-}
-.leaflet-control-zoom a {
-  background: rgba(5,11,17,.9) !important;
-  color: #e7edf2 !important;
-  border-color: var(--stroke-soft) !important;
-  line-height: 26px !important;
-  width: 28px !important;
-  height: 28px !important;
-  font-size: 14px !important;
-}
-.leaflet-control-zoom a:hover { background: #0b151e !important; }
-.leaflet-control-attribution {
-  background: rgba(5,11,17,.75) !important;
-  color: #5a6e7e !important;
-  font-size: 9px !important;
-}
-.leaflet-control-attribution a { color: #6b7e8d !important; }
-
-/* custom shelter marker */
-.shelter-marker {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--orange);
-  border: 2px solid white;
-  box-shadow: 0 0 6px rgba(255,90,43,.5);
-}
-.shade-marker {
-  width: 7px; height: 7px;
-  border-radius: 2px;
-  background: var(--green);
-  border: 1px solid white;
-}
-
-.map-legend {
-  position: absolute;
-  left: 20px;
-  bottom: 20px;
-  z-index: 500;
-  width: 140px;
-  background: rgba(7,14,20,.9);
-  border: 1px solid #2a3c4a;
-  border-radius: 10px;
-  padding: 10px;
-  backdrop-filter: blur(8px);
-}
-.legend-title { font-size: 11px; color: #c8d2da; margin-bottom: 8px; font-weight: 700; }
-.legend-row { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #9fb0be; margin: 5px 0; }
-.legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex: 0 0 auto; }
-.legend-gradient { height: 8px; border-radius: 99px; background: linear-gradient(90deg, #17324a, #315f7c, #e6af58, #f3782c, #df352d); margin: 7px 0 4px; }
 
 /* ── Insights ── */
 .insights { padding: 0 16px 15px; display: flex; flex-direction: column; gap: 8px; }
