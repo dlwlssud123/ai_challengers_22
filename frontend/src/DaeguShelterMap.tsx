@@ -66,8 +66,8 @@ export type DaeguShelterMapProps = {
 const PANE_Z_INDEX = {
   cityFill: 310,
   dongBoundaries: 320,
-  shelterRadii: 350,
-  districtBoundaries: 330,
+  shelterRadii: 325,
+  districtBoundaries: 315,
   cityBoundary: 470,
   selectedRadius: 470,
   shelterClusters: 600,
@@ -446,12 +446,12 @@ export function DaeguShelterMap({
         touchZoom
         preferCanvas
       >
-        <Pane name="daegu-fill"         style={{ zIndex: PANE_Z_INDEX.cityFill }} />
-        <Pane name="dong-boundaries"    style={{ zIndex: PANE_Z_INDEX.dongBoundaries }} />
-        <Pane name="shelter-radii"      style={{ zIndex: PANE_Z_INDEX.shelterRadii }} />
-        <Pane name="district-boundaries" style={{ zIndex: PANE_Z_INDEX.districtBoundaries }} />
-        <Pane name="city-boundary"      style={{ zIndex: PANE_Z_INDEX.cityBoundary }} />
-        <Pane name="selected-radius"    style={{ zIndex: PANE_Z_INDEX.selectedRadius }} />
+        <Pane name="daegu-fill"         style={{ zIndex: PANE_Z_INDEX.cityFill, pointerEvents: 'none' }} />
+        <Pane name="dong-boundaries"    style={{ zIndex: PANE_Z_INDEX.dongBoundaries, pointerEvents: 'auto' }} />
+        <Pane name="shelter-radii"      style={{ zIndex: PANE_Z_INDEX.shelterRadii, pointerEvents: 'none' }} />
+        <Pane name="district-boundaries" style={{ zIndex: PANE_Z_INDEX.districtBoundaries, pointerEvents: 'none' }} />
+        <Pane name="city-boundary"      style={{ zIndex: PANE_Z_INDEX.cityBoundary, pointerEvents: 'none' }} />
+        <Pane name="selected-radius"    style={{ zIndex: PANE_Z_INDEX.selectedRadius, pointerEvents: 'none' }} />
         <Pane name="shelter-clusters"   style={{ zIndex: PANE_Z_INDEX.shelterClusters }} />
         <Pane name="shelter-markers"    style={{ zIndex: PANE_Z_INDEX.shelterMarkers }} />
         <Pane name="dong-labels"        style={{ zIndex: PANE_Z_INDEX.dongLabels }} />
