@@ -464,11 +464,16 @@ function DetailedAnalysisView({
   onSelect: (d: District) => void;
 }) {
   const drivers = selected.risk_driver_breakdown || [
-    { name: '고령인구 비율', score: selected.elderly_vulnerability_pct || 75, weight: 0.35, desc: '60세 이상 고령자 밀집' },
-    { name: '쉼터 접근 사각지대', score: selected.accessibility_lack_pct || 65, weight: 0.30, desc: '도보 500m 쉼터 결여' },
-    { name: '미래 온열질환 노출', score: selected.future_climate_risk_pct || 55, weight: 0.20, desc: '2030 폭염일수 증가' },
-    { name: '도심 열섬·녹지부족', score: selected.green_shortage_pct || 60, weight: 0.15, desc: '식생 지수 결여' },
+    { name: '고령 취약계층 밀집', score: selected.elderly_vulnerability_pct || Math.min(100, Math.round(selected.elderly_ratio_60_plus * 280)), weight: 0.35, desc: '60세 이상 고령층 인구비율 상위' },
+    { name: '쉼터 접근 사각지대', score: selected.accessibility_lack_pct || Math.min(100, Math.round((1 - (selected.coverage_ratio_500m_area || 0.5)) * 100)), weight: 0.30, desc: '500m 쉼터 보행 접근권 결여' },
+    { name: '2030 기후 열노출 가중', score: selected.future_climate_risk_pct || 55, weight: 0.20, desc: '미래 폭염일수 및 온열질환 노출' },
+    { name: '도심 열섬·녹지 결여', score: selected.green_shortage_pct || Math.max(0, Math.round(100 - (selected.green_ratio_percent || 30) * 1.5)), weight: 0.15, desc: '식생 지수 결여 및 열섬 축적' },
   ];
+
+  // 가장 높은 백분위 점수를 가진 요인을 동적 주원인으로 판정
+  const sortedDrivers = [...drivers].sort((a, b) => b.score - a.score);
+  const primaryDriverName = selected.primary_risk_driver || sortedDrivers[0]?.name || '쉼터 접근 사각지대';
+  const primaryDriverDesc = selected.primary_driver_desc || sortedDrivers[0]?.desc || '도보 500m 반경 쉼터 접근성 부족';
 
   return (
     <div className="page">
@@ -519,10 +524,10 @@ function DetailedAnalysisView({
               <div className="cause-box">
                 <div className="cause-title">💡 왜 이 동이 취약한가? (1순위 원인 진단)</div>
                 <div className="cause-driver-name">
-                  핵심 취약 축: <b>{selected.primary_risk_driver || '고령인구 밀집 및 취약'}</b>
+                  핵심 취약 축: <b>{primaryDriverName}</b>
                 </div>
                 <div className="cause-desc">
-                  {selected.primary_driver_desc || '60세 이상 고령층 비율이 높고 무더위쉼터까지의 보행 이동 거리가 멀어 열사병 위험 노출도가 큽니다.'}
+                  {primaryDriverDesc}
                 </div>
               </div>
 

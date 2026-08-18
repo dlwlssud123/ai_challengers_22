@@ -421,7 +421,11 @@ export function DaeguShelterMap({
     const { grade, badgeClass, score } = getScoreGradeAndColor(scoreRaw);
     const cScoreStr = score.toFixed(1);
 
-    const pDriver = props.primary_risk_driver || '취약인구 밀집';
+    const pDriver = props.primary_risk_driver || (
+      score >= 80 ? '쉼터 사각지대 및 고령화' :
+      score >= 60 ? '쉼터 접근거리 과다' :
+      score >= 40 ? '도심 열섬 및 녹지 결여' : '양호한 열환경'
+    );
     const shelters = props.shelter_count ?? 0;
     const coverage = props.coverage_ratio_500m_area != null
       ? (Number(props.coverage_ratio_500m_area) * 100).toFixed(1) + '%' : '-';

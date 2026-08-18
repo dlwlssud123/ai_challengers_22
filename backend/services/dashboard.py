@@ -177,20 +177,20 @@ def enrich_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             grade = "양호"
             grade_en = "safe"
 
-        # 취약 원인별 기여도 및 백분위
+        # 취약 축별 백분위 값 (0~100)
         e_val = round(float(e_pct.iloc[i]), 1)
         l_val = round(float(lack_pct.iloc[i]), 1)
         f_val = round(float(future_pct.iloc[i]), 1)
         g_val = round(float(green_lack_pct.iloc[i]), 1)
 
-        # 주 원인 진단
+        # 주 원인 진단: 가중치 곱이 아닌 "해당 동에서 대구시 대비 가장 심각한 상대 백분위 순위(x[1])" 기준 정렬
         factors = [
-            ("고령인구 집중", e_val, 0.35, "60세 이상 고령층 인구비율 높음"),
-            ("쉼터 접근 사각지대", l_val, 0.30, "도보 500m 반경 쉼터 접근성 부족"),
-            ("미래 온열질환 노출", f_val, 0.20, "2030 폭염일수 및 열부담 가중"),
-            ("도심 열섬·녹지부족", g_val, 0.15, "식생 지수(NDVI) 및 공원 부족"),
+            ("고령 취약계층 밀집", e_val, 0.35, "60세 이상 고령자 거주 비율이 대구시 상위 수준"),
+            ("쉼터 접근 사각지대", l_val, 0.30, "도보 500m 반경 쉼터 접근성 부족 및 보행거리 과다"),
+            ("2030 기후 열노출 가중", f_val, 0.20, "미래 폭염일수 및 온열질환 발생 위험도 급증 지역"),
+            ("도심 열섬·녹지 결여", g_val, 0.15, "식생 지수(NDVI) 부족 및 아스팔트 열축적 심각"),
         ]
-        factors.sort(key=lambda x: x[1] * x[2], reverse=True)
+        factors.sort(key=lambda x: x[1], reverse=True)
 
         merged.update({
             "composite_risk_score": c_score,
