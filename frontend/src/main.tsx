@@ -1062,7 +1062,7 @@ function App() {
     });
   }, [heatmapMetric]);
 
-  // Run What-If on params change
+  // Run What-If on button click
   const runWhatIf = React.useCallback(async () => {
     setLoadingWhatIf(true);
     try {
@@ -1075,12 +1075,6 @@ function App() {
       setLoadingWhatIf(false);
     }
   }, [budget, unitCost, maxFacilities, facilityType]);
-
-  React.useEffect(() => {
-    if (overview) {
-      runWhatIf();
-    }
-  }, [budget, unitCost, maxFacilities, facilityType, overview, runWhatIf]);
 
   // Run AI Briefing
   const runBriefing = async () => {
