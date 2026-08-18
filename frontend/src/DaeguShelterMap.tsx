@@ -90,9 +90,29 @@ function escapeHtml(value: unknown) {
 }
 
 function colorToRgba(color: unknown): string {
-  if (!Array.isArray(color) || color.length < 3) return 'rgba(100,116,139,0.45)';
+  if (!Array.isArray(color) || color.length < 3) return 'rgba(14, 165, 233, 0.75)';
   const [r, g, b, a = 200] = color as number[];
   return `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
+}
+
+/** 점수에 따른 5색 히트맵 색상 (지도 폴리곤, 툴팁, 범례 완전 일치) */
+export function getFeatureColor(props: any): string {
+  const score = props?.composite_risk_score ?? props?.map_score ?? props?.vulnerability_score;
+  if (score == null || isNaN(Number(score))) {
+    if (Array.isArray(props?.fill_color)) return colorToRgba(props.fill_color);
+    return 'rgba(14, 165, 233, 0.75)'; // 기본 보통(파랑)
+  }
+  const val = Number(score);
+  // 심각 (80~100): 빨강
+  if (val >= 80) return 'rgba(220, 38, 38, 0.85)';
+  // 위험 (60~80): 주황
+  if (val >= 60) return 'rgba(249, 115, 22, 0.85)';
+  // 주의 (40~60): 노랑 / 황색
+  if (val >= 40) return 'rgba(234, 179, 8, 0.85)';
+  // 보통 (20~40): 선명한 하늘색 / 파랑
+  if (val >= 20) return 'rgba(14, 165, 233, 0.80)';
+  // 양호 (0~20): 선명한 초록색
+  return 'rgba(34, 197, 94, 0.80)';
 }
 
 function createShelterPopup(shelter: Shelter) {
@@ -503,8 +523,8 @@ export function DaeguShelterMap({
             data={dongBoundaries as GeoJsonObject}
             pane="dong-boundaries"
             style={(feature: any) => ({
-              fillColor: colorToRgba(feature?.properties?.fill_color),
-              fillOpacity: 0.72,
+              fillColor: getFeatureColor(feature?.properties),
+              fillOpacity: 0.78,
               color: 'rgba(255,255,255,0.75)',
               weight: 0.8,
               opacity: 1,

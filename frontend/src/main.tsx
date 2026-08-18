@@ -303,10 +303,14 @@ function DashboardView({
   onNavigateDetail: () => void;
 }) {
   const topDongs = [...data.districts]
-    .sort((a, b) => (b.composite_risk_score ?? b.vulnerability_score) - (a.composite_risk_score ?? a.vulnerability_score))
+    .sort((a, b) => {
+      const sB = Number(b.composite_risk_score ?? b.vulnerability_score ?? 0);
+      const sA = Number(a.composite_risk_score ?? a.vulnerability_score ?? 0);
+      return sB - sA;
+    })
     .slice(0, 6);
 
-  const severeCount = data.kpis.high_risk_dong_count ?? data.districts.filter(d => (d.composite_risk_score ?? 0) >= 60).length;
+  const severeCount = data.kpis.high_risk_dong_count ?? data.districts.filter(d => Number(d.composite_risk_score ?? d.vulnerability_score ?? 0) >= 60).length;
 
   return (
     <div className="page">
@@ -378,30 +382,33 @@ function DashboardView({
               <button className="text-link-btn" onClick={onNavigateDetail}>상세 분석 바로가기 →</button>
             </div>
             <div className="rank-list">
-              {topDongs.map((d, i) => (
-                <div
-                  className={`rank-row${selected?.sgis_adm_cd === d.sgis_adm_cd ? ' selected-row' : ''}`}
-                  key={d.sgis_adm_cd}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onSelect(d)}
-                >
-                  <div className="rank-num">{i + 1}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <b style={{ fontSize: 12 }}>{d.adm_name}</b>
-                    <span style={{ fontSize: 10, color: '#7a8e9e' }}>{d.district_name} · {d.primary_risk_driver || '취약지'}</span>
+              {topDongs.map((d, i) => {
+                const dongScore = Number(d.composite_risk_score ?? d.vulnerability_score ?? 0);
+                return (
+                  <div
+                    className={`rank-row${selected?.sgis_adm_cd === d.sgis_adm_cd ? ' selected-row' : ''}`}
+                    key={d.sgis_adm_cd}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => onSelect(d)}
+                  >
+                    <div className="rank-num">{i + 1}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <b style={{ fontSize: 12 }}>{d.adm_name}</b>
+                      <span style={{ fontSize: 10, color: '#7a8e9e' }}>{d.district_name} · {d.primary_risk_driver || '취약지'}</span>
+                    </div>
+                    {getGradeBadge(d.composite_risk_grade, dongScore)}
+                    <div style={{ width: 65, textAlign: 'right' }}>
+                      <b style={{ fontSize: 13, color: '#ff8b24' }}>{fmtScore(dongScore)}<small style={{ fontSize: 10 }}>점</small></b>
+                      <MiniBar value={dongScore} max={100} color={
+                        dongScore >= 80 ? '#ef4444' :
+                        dongScore >= 60 ? '#f97316' :
+                        dongScore >= 40 ? '#eab308' :
+                        dongScore >= 20 ? '#0ea5e9' : '#22c55e'
+                      } />
+                    </div>
                   </div>
-                  {getGradeBadge(d.composite_risk_grade, d.composite_risk_score)}
-                  <div style={{ width: 65, textAlign: 'right' }}>
-                    <b style={{ fontSize: 13, color: '#ff8b24' }}>{fmtScore(d.composite_risk_score)}<small style={{ fontSize: 10 }}>점</small></b>
-                    <MiniBar value={d.composite_risk_score ?? 0} max={100} color={
-                      (d.composite_risk_score ?? 0) >= 80 ? '#ef4444' :
-                      (d.composite_risk_score ?? 0) >= 60 ? '#f97316' :
-                      (d.composite_risk_score ?? 0) >= 40 ? '#eab308' :
-                      (d.composite_risk_score ?? 0) >= 20 ? '#0ea5e9' : '#22c55e'
-                    } />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         </div>
