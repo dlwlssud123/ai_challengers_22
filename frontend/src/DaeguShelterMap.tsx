@@ -57,6 +57,7 @@ export type DaeguShelterMapProps = {
   labelOffsets?: Record<string, [latitudeDelta: number, longitudeDelta: number]>;
   storageKey?: string;
   showLegend?: boolean;
+  metricMode?: string;
   onDistrictClick?: (districtName: string) => void;
   onShelterClick?: (shelter: Shelter) => void;
   /** 행정동 클릭 시 해당 feature.properties 전달 */
@@ -120,7 +121,34 @@ export function getScoreGradeAndColor(scoreVal: unknown): {
   return { grade: '양호', color: 'rgba(22, 163, 74, 0.88)', badgeClass: 'vuln-safe', score: num };
 }
 
+function rgbaFromArray(colorValue: unknown): string | null {
+  if (!Array.isArray(colorValue) || colorValue.length < 3) return null;
+  const nums = colorValue.map(Number);
+  const r = nums[0];
+  const g = nums[1];
+  const b = nums[2];
+  const a = nums.length >= 4 ? nums[3] : 255;
+  if (![r, g, b, a].every(Number.isFinite)) return null;
+  return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + Math.max(0, Math.min(1, a / 255)) + ')';
+}
+
+function getAccessibilityGrade(accessScoreVal: unknown): {
+  grade: string;
+  badgeClass: string;
+  score: number;
+} {
+  const num = Number(accessScoreVal);
+  if (isNaN(num)) return { grade: '보통', badgeClass: 'vuln-moderate', score: 30 };
+  if (num <= 20) return { grade: '심각', badgeClass: 'vuln-severe', score: num };
+  if (num <= 40) return { grade: '위험', badgeClass: 'vuln-danger', score: num };
+  if (num <= 60) return { grade: '주의', badgeClass: 'vuln-warn', score: num };
+  if (num <= 80) return { grade: '보통', badgeClass: 'vuln-moderate', score: num };
+  return { grade: '양호', badgeClass: 'vuln-safe', score: num };
+}
+
 export function getFeatureColor(props: any): string {
+  const apiColor = rgbaFromArray(props?.fill_color);
+  if (apiColor) return apiColor;
   const score = props?.map_score ?? props?.composite_risk_score ?? props?.vulnerability_score;
   return getScoreGradeAndColor(score).color;
 }
@@ -395,6 +423,7 @@ export function DaeguShelterMap({
   labelOffsets = {},
   storageKey = DEFAULT_STORAGE_KEY,
   showLegend = true,
+  metricMode = 'vulnerability',
   onDistrictClick,
   onShelterClick,
   onDongClick,
@@ -416,16 +445,28 @@ export function DaeguShelterMap({
     const props = feature?.properties ?? {};
     const name = String(props.adm_name ?? props.full_adm_name ?? '');
     
-    // getScoreGradeAndColor 단일 함수로 등급/점수/뱃지 산출
     const scoreRaw = props.map_score ?? props.composite_risk_score ?? props.vulnerability_score;
-    const { grade, badgeClass, score } = getScoreGradeAndColor(scoreRaw);
+    const isAccessibility = metricMode === 'accessibility';
+    const { grade, badgeClass, score } = isAccessibility
+      ? getAccessibilityGrade(scoreRaw)
+      : getScoreGradeAndColor(scoreRaw);
     const cScoreStr = score.toFixed(1);
 
-    const pDriver = props.primary_risk_driver || (
+    const pDriver = isAccessibility ? (
+      Number(props.shelter_count ?? 0) <= 0 ? '행정동 내 무더위쉼터 없음' :
+      score <= 20 ? '쉼터 접근성 심각 부족' :
+      score <= 40 ? '쉼터 접근거리 과다' :
+      score <= 60 ? '일부 격자 접근성 부족' : '쉼터 접근성 양호'
+    ) : props.primary_risk_driver || (
       score >= 80 ? '쉼터 사각지대 및 고령화' :
       score >= 60 ? '쉼터 접근거리 과다' :
       score >= 40 ? '도심 열섬 및 녹지 결여' : '양호한 열환경'
     );
+    const scoreLabel = isAccessibility
+      ? '쉼터 접근성'
+      : metricMode === 'future-risk'
+        ? '온열질환 위험'
+        : '종합 취약도';
     const shelters = props.shelter_count ?? 0;
     const coverage = props.coverage_ratio_500m_area != null
       ? (Number(props.coverage_ratio_500m_area) * 100).toFixed(1) + '%' : '-';
@@ -449,7 +490,7 @@ export function DaeguShelterMap({
             <span>${escapeHtml(pDriver)}</span>
           </div>
           <div class="dit-grid">
-            <div class="dit-row"><span>폭염위험지수</span><b class="highlight">${cScoreStr}점</b></div>
+            <div class="dit-row"><span>${scoreLabel}</span><b class="highlight">${cScoreStr}점</b></div>
             <div class="dit-row"><span>쉼터 커버리지</span><b>${coverage}</b></div>
             <div class="dit-row"><span>무더위쉼터</span><b>${shelters}곳</b></div>
             <div class="dit-row"><span>고령인구(60+)</span><b>${elderly}</b></div>
@@ -469,7 +510,7 @@ export function DaeguShelterMap({
     if (onDongClick) {
       layer.on('click', () => onDongClick(feature?.properties ?? {}));
     }
-  }, [onDongClick]);
+  }, [metricMode, onDongClick]);
 
   return (
     <section
@@ -526,9 +567,9 @@ export function DaeguShelterMap({
             style={(feature: any) => ({
               fillColor: getFeatureColor(feature?.properties),
               fillOpacity: 0.85,
-              color: 'rgba(255,255,255,0.85)',
-              weight: 0.9,
-              opacity: 1,
+              color: 'rgba(255,255,255,0.42)',
+              weight: 0.45,
+              opacity: 0.72,
               fill: true,
             })}
             onEachFeature={onEachDong}
@@ -562,7 +603,7 @@ export function DaeguShelterMap({
           data={cityBoundary as GeoJsonObject}
           pane="city-boundary"
           interactive={false}
-          style={{ color: '#0f1f2c', weight: 2.6, opacity: 0.9, fill: false }}
+          style={{ color: 'transparent', weight: 0, opacity: 0, fill: false }}
         />
         <ShelterClusterLayer shelters={shelters} onSelect={selectShelter} />
         <DistrictLabels districts={districtBoundaries} offsets={labelOffsets} />

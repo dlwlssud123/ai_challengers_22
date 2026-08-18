@@ -42,6 +42,7 @@ type District = {
   coverage_ratio_500m_area: number;
   grid_accessibility_index_exp_d_300: number;
   grid_accessibility_lack_score: number;
+  grid_population_weighted_accessibility_lack_score?: number;
   grid_mean_nearest_shelter_distance_m: number;
   grid_beyond_500m_ratio: number;
   priority_score_existing_pipeline: number;
@@ -230,6 +231,22 @@ function heatmapModeLabel(mode: MetricMode) {
   return HEATMAP_MODES.find(item => item.key === mode)?.label || '종합 취약도';
 }
 
+function heatmapMetricScore(d: District, mode: MetricMode) {
+  if (mode === 'accessibility') {
+    const score = 100 - Number(d.accessibility_lack_pct ?? d.grid_population_weighted_accessibility_lack_score ?? 50);
+    return Math.max(0, Math.min(100, score));
+  }
+  if (mode === 'future-risk') return Number(d.future_climate_risk_pct ?? d.future_heat_risk_score ?? 0);
+  return Number(d.composite_risk_score ?? d.vulnerability_score ?? 0);
+}
+
+function heatmapMetricGrade(score: number, mode: MetricMode) {
+  if (mode === 'accessibility') {
+    return score <= 20 ? '심각' : score <= 40 ? '위험' : score <= 60 ? '주의' : score <= 80 ? '보통' : '양호';
+  }
+  return score >= 80 ? '심각' : score >= 60 ? '위험' : score >= 40 ? '주의' : score >= 20 ? '보통' : '양호';
+}
+
 function getGradeBadge(grade?: string, score?: number) {
   const g = grade || (
     score != null ? (
@@ -265,12 +282,14 @@ function AppShelterMap({
   onDistrictClick,
   onSelect,
   height = '520px',
+  metricMode = 'vulnerability',
 }: {
   data: Overview;
   selectedDistrict?: string;
   onDistrictClick?: (name: string) => void;
   onSelect?: (d: District) => void;
   height?: string;
+  metricMode?: MetricMode;
 }) {
   const hasDistricts = data.district_boundaries?.features?.length > 0;
   const hasCity = data.city_boundary?.features?.length > 0;
@@ -303,6 +322,7 @@ function AppShelterMap({
       onDistrictClick={onDistrictClick}
       onDongClick={handleDongClick}
       showLegend={true}
+      metricMode={metricMode}
     />
   );
 }
@@ -373,6 +393,9 @@ function DashboardView({
     .slice(0, 6);
 
   const severeCount = data.kpis.high_risk_dong_count ?? data.districts.filter(d => Number(d.composite_risk_score ?? d.vulnerability_score ?? 0) >= 60).length;
+  const selectedMetricScore = selected ? heatmapMetricScore(selected, heatmapMetric) : 0;
+  const selectedMetricLabel = heatmapModeLabel(heatmapMetric);
+  const selectedMetricGrade = heatmapMetricGrade(selectedMetricScore, heatmapMetric);
 
   return (
     <div className="page">
@@ -424,6 +447,7 @@ function DashboardView({
                 onDistrictClick={onDistrictClick}
                 onSelect={onSelect}
                 height="480px"
+                metricMode={heatmapMetric}
               />
             </div>
           </div>
@@ -504,7 +528,7 @@ function DashboardView({
           </div>
           <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
             {[
-              ['종합 취약도', `${fmtScore(selected.composite_risk_score)}점`, '#ff8b24'],
+              [selectedMetricLabel, `${fmtScore(selectedMetricScore)}점`, heatmapMetric === 'accessibility' && selectedMetricScore <= 20 ? '#ef4444' : '#ff8b24'],
               ['주요 취약 원인', `${selected.primary_risk_driver || '고령층 밀집'}`, '#f87171'],
               ['60세+ 고령인구', `${fmtNumber(selected.elderly_population_60_plus)}명 (${fmtScore(selected.elderly_ratio_60_plus * 100)}%)`, '#38bdf8'],
               ['무더위쉼터', `${selected.shelter_count}곳`, '#4ade80'],
